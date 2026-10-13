@@ -1,0 +1,36 @@
+{
+  "code": 0,
+  "msg": "ok",
+  "request_id": "price-demo-001",
+  "data": {
+    "status": "DEMO_ONLY",
+    "usage": "HISTORICAL_DEMO",
+    "price_basis": "LISTING_UNVERIFIED",
+    "estimated_unit_price_yuan_sqm": 38833.74,
+    "estimated_total_price_yuan": 4942369.73,
+    "price_interval": {
+      "lower_total_price_yuan": 4201741.85,
+      "upper_total_price_yuan": 5813545.76,
+      "nominal_coverage": 0.9,
+      "method": "SPLIT_CONFORMAL_LOG_UNIT_BY_COMMUNITY_SEEN",
+      "calibration_group": "seen",
+      "calibration_sample_count": 2070
+    },
+    "model_version": "historical-reference-v1",
+    "data_version": "ce3f0cf611bd59f95acdad140c1dd7422761997c73ec3c2b903238a8df7dc214",
+    "data_observed_at": null,
+    "sample_listing_date_min": "2015-06-19 00:00:00",
+    "sample_listing_date_max": "2021-07-05 00:00:00",
+    "comparable_sample_count": 14,
+    "reference_level": "COMMUNITY",
+    "quality_flags": [
+      "HISTORICAL_DATA",
+      "PRICE_BASIS_UNVERIFIED"
+    ],
+    "explanations": [
+      "参考样本数是训练集中同小区或同板块记录数，并非严格匹配的相似成交房源。"
+    ],
+    "generated_at": "2026-10-14T00:57:17.920702+08:00",
+    "notice": "基于历史挂牌样本的辅助定价演示；价格口径未核实，不代表当前市场价、未来价格或房地产评估报告。区间不保证覆盖实际成交价。"
+  }
+}

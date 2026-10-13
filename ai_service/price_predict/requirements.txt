@@ -1,0 +1,10 @@
+# Versions used to serialize and verify the delivered model.
+numpy==1.26.4
+pandas==2.2.2
+scikit-learn==1.5.1
+joblib==1.4.2
+lightgbm==4.6.0
+fastapi==0.115.6
+pydantic==2.10.3
+uvicorn==0.32.1
+jsonschema==4.23.0

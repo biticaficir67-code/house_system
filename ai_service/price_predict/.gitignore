@@ -1,0 +1,5 @@
+# Local Windows dependency copy. Other computers install requirements.txt.
+vendor/
+__pycache__/
+*.py[cod]
+.venv/

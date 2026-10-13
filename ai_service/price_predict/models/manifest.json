@@ -1,0 +1,110 @@
+{
+  "model_version": "historical-reference-v1",
+  "schema_version": "1.0",
+  "price_basis": "LISTING_UNVERIFIED",
+  "usage": "HISTORICAL_DEMO",
+  "model_sha256": "9c6ab7a16fc741166426821bff7a25ea4cc9a1f5dada8d5e1e0e86b885325310",
+  "source_archive_sha256": "ce3f0cf611bd59f95acdad140c1dd7422761997c73ec3c2b903238a8df7dc214",
+  "fit_rows": 12572,
+  "calibration_rows": 2253,
+  "calibration_counts": {
+    "seen": 2070,
+    "unseen": 147
+  },
+  "nominal_coverage": 0.9,
+  "evaluation": {
+    "validation": {
+      "rows": 3221,
+      "served_rows": 3163,
+      "refusal_pct": 1.8,
+      "reason_counts": {
+        "INSUFFICIENT_REFERENCE_SAMPLES": 57,
+        "OUT_OF_TRAINING_RANGE:rooms": 1
+      },
+      "empirical_interval_coverage_pct": 90.96,
+      "median_interval_width_pct_of_point": 32.61,
+      "all_point_metrics": {
+        "eligible_rows": 3221,
+        "predicted_rows": 3221,
+        "coverage_pct": 100.0,
+        "unit_mae_yuan_sqm": 3217.8748,
+        "total_mae_yuan": 367184.47,
+        "mape_pct": 8.3109,
+        "median_ape_pct": 5.8752,
+        "within_10pct": 72.0894,
+        "within_20pct": 92.2695
+      },
+      "served_point_metrics": {
+        "eligible_rows": 3163,
+        "predicted_rows": 3163,
+        "coverage_pct": 100.0,
+        "unit_mae_yuan_sqm": 3173.442,
+        "total_mae_yuan": 361917.75,
+        "mape_pct": 8.2513,
+        "median_ape_pct": 5.855,
+        "within_10pct": 72.3364,
+        "within_20pct": 92.4755
+      }
+    },
+    "test": {
+      "rows": 3204,
+      "served_rows": 3139,
+      "refusal_pct": 2.03,
+      "reason_counts": {
+        "INSUFFICIENT_REFERENCE_SAMPLES": 65
+      },
+      "empirical_interval_coverage_pct": 90.73,
+      "median_interval_width_pct_of_point": 32.61,
+      "all_point_metrics": {
+        "eligible_rows": 3204,
+        "predicted_rows": 3204,
+        "coverage_pct": 100.0,
+        "unit_mae_yuan_sqm": 3297.5215,
+        "total_mae_yuan": 353629.93,
+        "mape_pct": 8.5485,
+        "median_ape_pct": 6.1015,
+        "within_10pct": 71.2859,
+        "within_20pct": 92.2285
+      },
+      "served_point_metrics": {
+        "eligible_rows": 3139,
+        "predicted_rows": 3139,
+        "coverage_pct": 100.0,
+        "unit_mae_yuan_sqm": 3267.5557,
+        "total_mae_yuan": 352426.39,
+        "mape_pct": 8.4818,
+        "median_ape_pct": 6.0813,
+        "within_10pct": 71.4877,
+        "within_20pct": 92.3543
+      }
+    }
+  },
+  "config": {
+    "name": "lgb_crossfit_log_63",
+    "algorithm": "lightgbm",
+    "encoding": "crossfit_target",
+    "log_target": true,
+    "params": {
+      "n_estimators": 1200,
+      "learning_rate": 0.03,
+      "num_leaves": 63,
+      "min_child_samples": 10,
+      "reg_lambda": 5,
+      "colsample_bytree": 0.9,
+      "objective": "regression"
+    },
+    "target_smooth": "auto"
+  },
+  "limitation": "Chronological dependent observations; previously reused evaluation data. Nominal coverage is not a current/future market guarantee.",
+  "dependencies": {
+    "numpy": "1.26.4",
+    "pandas": "2.2.2",
+    "scikit-learn": "1.5.1",
+    "joblib": "1.4.2",
+    "fastapi": "0.115.6",
+    "pydantic": "2.10.3",
+    "uvicorn": "0.32.1",
+    "jsonschema": "4.23.0",
+    "lightgbm": "4.6.0"
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "D 模块历史房源价格参考请求 v1.0（接口草案）",
+  "description": "只校验请求结构。跨字段与训练覆盖校验由服务另行完成。禁止输入价格标签。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "city", "district", "community_name", "building_area_sqm", "rooms", "halls", "bathrooms", "floor_level", "total_floors", "orientation", "decoration", "has_elevator", "property_usage"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "request_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "house_id": {"type": ["string", "null"], "minLength": 1, "maxLength": 64},
+    "community_id": {"type": ["string", "null"], "minLength": 1, "maxLength": 64},
+    "city": {"type": "string", "minLength": 1, "maxLength": 32},
+    "district": {"type": "string", "minLength": 1, "maxLength": 32},
+    "business_area": {"type": ["string", "null"], "minLength": 1, "maxLength": 128},
+    "community_name": {"type": "string", "minLength": 1, "maxLength": 128},
+    "building_area_sqm": {"type": "number", "exclusiveMinimum": 0, "description": "建筑面积，平方米；服务另检查训练分布覆盖。"},
+    "rooms": {"type": "integer", "minimum": 1},
+    "halls": {"type": "integer", "minimum": 0},
+    "bathrooms": {"type": "integer", "minimum": 0},
+    "floor_level": {"enum": ["LOW", "MIDDLE", "HIGH", "UNKNOWN"]},
+    "total_floors": {"type": "integer", "minimum": 1},
+    "orientation": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"enum": ["E", "S", "W", "N", "NE", "NW", "SE", "SW", "UNKNOWN"]},
+      "description": "UNKNOWN 只能独占数组，服务另校验。"
+    },
+    "decoration": {"enum": ["ROUGH", "SIMPLE", "FINE", "OTHER", "UNKNOWN"]},
+    "has_elevator": {"type": ["boolean", "null"]},
+    "property_usage": {"enum": ["RESIDENTIAL", "MIXED_USE", "VILLA", "GARAGE", "UNKNOWN"], "description": "只有 RESIDENTIAL 在首版训练范围内，其他用途返回 UNAVAILABLE。"},
+    "longitude": {"type": ["number", "null"], "minimum": -180, "maximum": 180},
+    "latitude": {"type": ["number", "null"], "minimum": -90, "maximum": 90},
+    "building_type": {"enum": ["SLAB", "TOWER", "SLAB_TOWER", "BUNGALOW", "UNKNOWN", null]},
+    "layout_structure": {"enum": ["FLAT", "DUPLEX", "SPLIT_LEVEL", "LOFT", "OTHER", "UNKNOWN", null]},
+    "construction_structure": {"enum": ["STEEL_CONCRETE", "BRICK_CONCRETE", "MIXED", "FRAME", "STEEL", "BRICK_WOOD", "UNKNOWN", null]},
+    "ownership_type": {"enum": ["COMMERCIAL", "PUBLIC_PURCHASED", "RELOCATION", "PRIVATE", "UNKNOWN", null]},
+    "internal_area_sqm": {"type": ["number", "null"], "exclusiveMinimum": 0},
+    "listing_date": {"type": ["string", "null"], "format": "date", "description": "仅审计，不作为价格观测时间。"}
+  }
+}

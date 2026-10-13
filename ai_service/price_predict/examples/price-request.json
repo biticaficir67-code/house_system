@@ -1,0 +1,24 @@
+{
+  "district": "钱塘",
+  "business_area": "金沙湖",
+  "community_name": "德信早城",
+  "floor_level": "LOW",
+  "decoration": "ROUGH",
+  "building_type": "SLAB",
+  "layout_structure": "FLAT",
+  "construction_structure": "STEEL_CONCRETE",
+  "ownership_type": "COMMERCIAL",
+  "building_area_sqm": 127.27,
+  "rooms": 4,
+  "halls": 2,
+  "bathrooms": 2,
+  "total_floors": 22,
+  "schema_version": "1.0",
+  "request_id": "price-demo-001",
+  "city": "杭州",
+  "property_usage": "RESIDENTIAL",
+  "orientation": [
+    "S"
+  ],
+  "has_elevator": true
+}

@@ -1,0 +1,52 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: house-system-backend
+  profiles:
+    default: local
+  jackson:
+    default-property-inclusion: non_null
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+      schema-locations: classpath:db/schema.sql
+  datasource:
+    url: jdbc:h2:mem:housesystem;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+    jdbc-type-for-null: 'NULL'
+  type-handlers-package: cn.csu.housesystem.house.mapper
+
+house-system:
+  ai:
+    text-analyze-url: ${AI_TEXT_ANALYZE_URL:http://127.0.0.1:5001/ai/analyze}
+    price-predict-url: ${AI_PRICE_PREDICT_URL:http://127.0.0.1:8001/ai/predict/price}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: mysql
+  sql:
+    init:
+      schema-locations: classpath:db/schema-mysql.sql
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/house_system?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  h2:
+    console:
+      enabled: false

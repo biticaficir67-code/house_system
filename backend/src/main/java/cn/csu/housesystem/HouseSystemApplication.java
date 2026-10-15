@@ -1,0 +1,14 @@
+package cn.csu.housesystem;
+
+import org.mybatis.spring.annotation.MapperScan;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+@MapperScan("cn.csu.housesystem.house.mapper")
+public class HouseSystemApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(HouseSystemApplication.class, args);
+    }
+}

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="system.house.HouseMapper">
+    <resultMap id="houseSummary" type="system.house.HouseSummary">
+        <constructor>
+            <idArg column="id" javaType="java.lang.Long"/>
+            <arg column="city" javaType="java.lang.String"/>
+            <arg column="district" javaType="java.lang.String"/>
+            <arg column="business_area" javaType="java.lang.String"/>
+            <arg column="community_name" javaType="java.lang.String"/>
+            <arg column="building_area_sqm" javaType="java.math.BigDecimal"/>
+            <arg column="rooms" javaType="java.lang.Integer"/>
+            <arg column="halls" javaType="java.lang.Integer"/>
+            <arg column="bathrooms" javaType="java.lang.Integer"/>
+            <arg column="floor_level" javaType="java.lang.String"/>
+            <arg column="total_floors" javaType="java.lang.Integer"/>
+            <arg column="orientation" javaType="java.lang.String"/>
+            <arg column="decoration" javaType="java.lang.String"/>
+            <arg column="has_elevator" javaType="java.lang.Boolean"/>
+            <arg column="listing_price_yuan" javaType="java.math.BigDecimal"/>
+            <arg column="listing_date" javaType="java.time.LocalDate"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="broker_id" javaType="java.lang.Long"/>
+        </constructor>
+    </resultMap>
+
+    <sql id="searchConditions">
+        <where>
+            <if test="district != null and district != ''">
+                AND district = #{district}
+            </if>
+            <if test="communityName != null and communityName != ''">
+                AND community_name LIKE CONCAT('%', #{communityName}, '%')
+            </if>
+            <if test="status != null and status != ''">
+                AND status = #{status}
+            </if>
+        </where>
+    </sql>
+
+    <select id="search" resultMap="houseSummary">
+        SELECT id, city, district, business_area, community_name, building_area_sqm,
+               rooms, halls, bathrooms, floor_level, total_floors, orientation,
+               decoration, has_elevator, listing_price_yuan, listing_date, status, broker_id
+        FROM house
+        <include refid="searchConditions"/>
+        ORDER BY id DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*) FROM house
+        <include refid="searchConditions"/>
+    </select>
+
+    <select id="findById" resultMap="houseSummary">
+        SELECT id, city, district, business_area, community_name, building_area_sqm,
+               rooms, halls, bathrooms, floor_level, total_floors, orientation,
+               decoration, has_elevator, listing_price_yuan, listing_date, status, broker_id
+        FROM house
+        WHERE id = #{id}
+    </select>
+</mapper>

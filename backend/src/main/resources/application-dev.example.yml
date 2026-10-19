@@ -1,0 +1,10 @@
+# Copy this file to application-dev.yml when you want development-only settings.
+logging:
+  level:
+    system: debug
+    org.mybatis: info
+
+management:
+  endpoint:
+    health:
+      show-details: always

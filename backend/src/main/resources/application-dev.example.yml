@@ -1,7 +1,9 @@
-# Copy this file to application-dev.yml when you want development-only settings.
+# Copy to application-dev.yml; this local file is excluded by backend/.gitignore.
+# Configure DB_URL, DB_USERNAME and DB_PASSWORD in your IDE environment.
+# First administrator only: set BOOTSTRAP_KEY temporarily, then clear it after initialization.
 logging:
   level:
-    system: debug
+    system: info
     org.mybatis: info
 
 management:

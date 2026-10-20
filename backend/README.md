@@ -1,43 +1,103 @@
-# House System Backend
+# 二手房业务管理系统后端
 
-Spring Boot service for the house system project. Keep backend source, configuration, and backend-specific documentation in this directory.
+Spring Boot 3.5、Java 17、Spring Security、MyBatis、MySQL 8.0+。所有 Java 文件保持在 `src/main/java/system`，业务模块内直接放 Controller/Service/Models，不增加 entity/dto/impl 等层级目录。
 
-## Requirements
+## 已实现
 
-- JDK 17
-- Maven 3.6.3 or newer
-- MySQL matching the schema maintained by the project
+- 不透明 Bearer Token、BCrypt 密码、退出/改密后撤销会话、登录失败限流；管理员查看全部业务，经纪人只操作本人所在门店且由本人负责的数据。
+- 仅管理员 ADMIN、经纪人 BROKER 两种固定身份，每个账号选择一种；管理员统一开通内部账号，菜单由权限生成，后端逐接口鉴权。
+- 管理员/经纪人工作台：今日预约、在售房源、待核验房源、待核实成交、委托到期与未读提醒。
+- 房源分页筛选、详情、录入编辑、负责人交接、核验、上下架、归档、状态时间线。
+- JPEG/PNG/WebP/MP4 上传、内容签名校验、受权限保护的媒体读取与逻辑删除。
+- 业主、委托关系、跟进；委托冲突检测、每日到期任务与已读提醒。
+- 客户、标签、需求、跟进和按已填写条件解释匹配房源。
+- 预约、改期、完成、取消、回访；记录执行经纪人，防止同时段重复预约。
+- 成交登记、核实、修改和撤销；挂牌价和成交价分别保存，成交事务同步房源、客户和未完成预约。
+- 房源事务提交后异步调用文案分析；价格参考由用户触发，保留输入快照、版本、历史和失败状态。
+- 基础报表、日期/门店/角色范围过滤、CSV 导出；C 可通过 `ReportExtension` 接入复杂统计 SQL。
+- Swagger/OpenAPI、统一错误和 requestId、跨域配置。
 
-The project uses Spring Boot 3.5 and MyBatis. It does not create or modify the database schema on startup.
+## 两类人员的职责
 
-## Configure and run
+系统供内部人员使用。业主和客户是业务档案，由内部人员维护，不开设登录账号。门店是业务归属，不再设置门店管理人员角色。
 
-Set these environment variables in the IDE run configuration or shell when needed:
-
-| Variable | Default | Purpose |
+| 业务 | 管理员 ADMIN | 经纪人 BROKER |
 | --- | --- | --- |
-| `SPRING_PROFILES_ACTIVE` | `dev` | Spring profile |
-| `SERVER_PORT` | `8080` | HTTP port |
-| `DB_URL` | Local `house_system` MySQL URL | JDBC URL |
-| `DB_USERNAME` | `root` | MySQL username |
-| `DB_PASSWORD` | empty | MySQL password; set this locally, do not commit secrets |
-| `AI_PRICE_BASE_URL` | `http://127.0.0.1:8001` | Internal price-estimation service base URL |
-| `AI_TEXT_BASE_URL` | `http://127.0.0.1:5001` | Internal text-analysis service base URL |
+| 工作台 | 全局待办、待核验房源、待核实成交 | 本人今日带看、待核验进度、到期委托 |
+| 账号和门店 | 开通账号、启停、改身份、重置密码、管理门店 | 查看本店信息、修改本人密码 |
+| 房源和媒体 | 全部资料、核验、分配与交接、上下架、归档 | 本人房源录入/编辑/媒体、核验通过后上下架、符合条件时归档 |
+| 业主和委托 | 全部档案、委托、负责人调整、跟进和提醒 | 本人档案、委托、跟进和提醒 |
+| 客户和需求 | 全部档案、负责人调整、需求与跟进 | 本人客户、需求、标签、房源匹配与跟进 |
+| 预约和带看 | 全部预约、改期、执行记录、回访 | 本人预约、改期、执行记录、回访 |
+| 成交 | 全部登记、核实、纠错、撤销 | 本人成交登记、核实前修改、核实前撤销 |
+| AI 辅助 | 对全部可见房源使用文案分析与价格参考 | 对本人房源使用，保留结果与历史 |
+| 报表和导出 | 全局统计，可筛选门店、日期、分组 | 个人范围统计和房源导出，不能查看他人业绩 |
 
-From this directory, run:
+原店长的核验与分配、财务的成交核实、内勤的账号和全局资料维护由管理员承担；日常录入、联系与回访由经纪人完成。核验、挂牌、成交登记、成交核实继续分步骤保留，避免单次录入直接成为已核实的报表数据。权限、状态流转和请求示例见 [API.md](API.md)。
+
+## 数据库准备
+
+现有本机 MySQL 5.1 不适用于组员的 MySQL 8.x 数据文件。请使用独立的 MySQL 8.0+ 开发数据库；这些代码不会自动升级 MySQL 或自动执行建库脚本。
+
+1. 在**新建、没有业务数据的开发实例/库**中导入仓库 `../database/house_system_full.sql`。该原始全量文件包含 DROP TABLE，只用于初始化空库，不能对已有业务库重复导入。
+2. 连接 `house_system`，执行一次 `src/main/resources/db/migration/V001__backend_business.sql`。该脚本增加业务表和现有表的列，不删除组员的房源/带看数据。
+3. 接着执行一次 `src/main/resources/db/migration/V002__admin_broker_only.sql`，确认 `SELECT version FROM backend_schema_version;` 包含 1、2。已有 V001 库只执行 V002，勿重复运行 V001 的 ALTER TABLE。
+4. 原始带看数据标成 `LEGACY_DEMO`，不计入真实带看报表；导入房源保留 `LEGACY_IMPORT`。经纪人根据原 dept 关联门店；登录账号通过管理接口显式绑定经纪人。
+
+执行脚本需要数据库账号具备建表、修改表权限；日常运行账号仅需要业务表的查询/增改权限。开发时可先使用已有开发账号，配置值不写进 Git。
+
+从旧五角色版本升级时，停后端并备份数据库，再执行 V002。已有 ADMIN 保留；其他旧身份统一成为 BROKER，不会自动提升为管理员；旧角色停用且不再分配，账号与业务资料保留。没有业务档案的经纪人账号会补建档案，但不会自动接管其他人的历史业务。所有旧会话撤销，需重新登录。脚本不会自动执行，本次源码修改也不改动本机数据库。
+
+## 配置与启动
+
+在 IDEA 运行配置或本机环境设置：
+
+| 变量 | 默认值/说明 |
+| --- | --- |
+| DB_URL | jdbc:mysql://127.0.0.1:3306/house_system?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai |
+| DB_USERNAME | root |
+| DB_PASSWORD | 空；按开发库实际密码设置 |
+| BOOTSTRAP_KEY | 空表示关闭首次管理员初始化入口 |
+| SERVER_PORT | 8080 |
+| TOKEN_HOURS | 12 |
+| CORS_ALLOWED_ORIGINS | localhost:5173、127.0.0.1:5173、127.0.0.1:5174 对应的 http 地址 |
+| UPLOAD_DIRECTORY | ./uploads；部署时设持久化绝对路径 |
+| AI_TEXT_BASE_URL | http://127.0.0.1:5001 |
+| AI_PRICE_BASE_URL | http://127.0.0.1:8001 |
+| REMINDER_CRON | 每天 09:00 扫描委托到期（服务器时区应设 Asia/Shanghai） |
+
+从 `backend/` 执行：
 
 ```shell
 mvn spring-boot:run
 ```
 
-Copy `src/main/resources/application-dev.example.yml` to `application-dev.yml` if you want the development-only logging settings. The actuator health endpoint is `GET http://localhost:8080/actuator/health`.
+或在 IDEA 中运行 `system.HouseSystemApplication`。本地配置可放 `application-dev.yml`，该文件由 backend/.gitignore 排除。
 
-## Structure
+首次使用时，设一个临时 `BOOTSTRAP_KEY`，调用 `POST /api/auth/bootstrap`（请求头 `X-Bootstrap-Key` 与环境变量一致）创建管理员；只有用户表为空时可成功。创建后清空该环境变量并重启。没有写死的演示账号或默认管理员密码。
 
-- `common`: shared API response, pagination, business exception, and error responses
-- `config`: cross-origin, upload, and internal service configuration
-- `security`, `auth`, `system`, `owner`, `customer`, `showing`, `deal`, `ai`, `report`: package boundaries for the remaining backend modules
-- `house`: paged house search and house detail API
-- `src/main/resources`: Spring profiles and MyBatis/database configuration
+接口文档：`http://localhost:8080/swagger-ui/index.html`。OpenAPI JSON：`/v3/api-docs`。登录获取 token 后，在 Swagger 的 Authorize 输入 token，再调用受保护接口。完整字段与流程见 [API.md](API.md)。
 
-New business features should be added as focused packages under `system` (for example, `owner`, `customer`, or `deal`) with controller, service, mapper, and model kept together. Keep controller code thin and put business rules in services.
+## 协作与实现约定
+
+- `system` 包是基础包，子模块 `system/system` 负责账号角色门店。
+- SQL 参数通过 MyBatis 绑定；通用 `DataMapper/DataStore` 仅接受 Java 内部生成的 SQL，HTTP 请求不能提供表名、列名或排序 SQL。现有 `HouseMapper.xml` 保留原查询协议供组员参考。
+- 两种身份及权限固定：ADMIN 为 ALL，BROKER 为 OWN（本店且负责人为本人）。角色只提供查询接口，移除新增角色、编辑权限和任意数据范围配置接口；服务端按身份确定实际权限，不信任数据库中遗留的自定义权限字符串。后续如需调整职责，统一修改 `security/Permissions.java` 并同步迁移脚本与接口文档。
+- 新建管理员不创建经纪人档案；新建经纪人可自动创建档案或绑定本店未绑定的旧档案。管理员改为经纪人时自动补建缺失档案；经纪人改为管理员保留历史档案，后续新业务的经纪人选择不再列出该管理员。不得停用自己，必须保留一个启用的管理员，身份变更或停用立即撤销旧会话。
+- 旧数据有 broker 但未绑定 sys_user 时，不会自动成为某人的登录身份。通过用户创建接口绑定已有 brokerId。
+- 状态变更、委托、预约和成交保留记录；归档和媒体移除是逻辑删除，媒体原文件保留以便恢复，需由部署方安排文件归档策略。
+- PUT 更新业务记录时携带当前 version，过期返回 409。并发预约锁定经纪人；成交锁定房源，防止重复登记。
+- 日期范围的结束日期包含当天；业务日期使用 Asia/Shanghai 口径。ID 在命名为 id/*Id 的字段中按字符串返回，页码、数量和金额保持数值。
+- 文案服务在房源提交后调用，失败时房源照常保存；详情从数据库读取结果，不会重复调用 Python。请求日志保留失败及过期状态。
+- 估价不会输入挂牌价格、客户预算或卖点文案；UNAVAILABLE 的价格/区间保持 null。估价不改变挂牌价或成交价。房源特征变化后历史预测 stale=true。
+- 真实成交报表仅统计 CONFIRMED 且 verified=true 的记录；挂牌均价只是挂牌口径，AI 结果仅为历史参考。
+- C 的复杂报表 SQL 可实现 `ReportExtension`；使用传入的 scopedSource 作为子查询，沿用门店/经纪人/日期过滤，基础数据与字段说明见 API.md。
+
+## 验证
+
+```shell
+mvn test
+mvn package
+```
+
+集成测试使用 H2 独立内存库和模拟的 Python HTTP 服务，不会连接本机 MySQL。覆盖登录撤销、角色和数据隔离、房源/业主/客户/带看/成交流程、并发预约、媒体校验、AI 空值/快照/过期、CORS。测试 schema 保持业务列约束，JSON 列在 H2 中以文本表示；MySQL 原增量 DDL、组员数据库及实际 Python 服务仍需在 MySQL 8 联调环境运行验证。

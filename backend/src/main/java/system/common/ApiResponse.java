@@ -1,11 +1,13 @@
 package system.common;
 
-public record ApiResponse<T>(int code, String message, T data) {
+import org.slf4j.MDC;
+
+public record ApiResponse<T>(int code, String message, T data, String requestId) {
     public static <T> ApiResponse<T> success(T data) {
-        return new ApiResponse<>(0, "success", data);
+        return new ApiResponse<>(0, "success", data, MDC.get("requestId"));
     }
 
     public static ApiResponse<Void> failure(int code, String message) {
-        return new ApiResponse<>(code, message, null);
+        return new ApiResponse<>(code, message, null, MDC.get("requestId"));
     }
 }

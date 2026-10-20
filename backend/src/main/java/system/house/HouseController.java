@@ -1,38 +1,77 @@
 package system.house;
 
-import system.common.ApiResponse;
-import system.common.PageResponse;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
-import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.Valid;
 
-@Validated
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import system.common.ApiResponse;
+
 @RestController
 @RequestMapping("/api/houses")
 public class HouseController {
-    private final HouseService houseService;
+    private final HouseService service;
 
-    public HouseController(HouseService houseService) {
-        this.houseService = houseService;
+    public HouseController(HouseService service) {
+        this.service = service;
     }
 
     @GetMapping
-    public ApiResponse<PageResponse<HouseSummary>> search(
-            @RequestParam(required = false) String district,
-            @RequestParam(required = false) String communityName,
-            @RequestParam(required = false) String status,
-            @RequestParam(defaultValue = "1") @Min(1) int page,
-            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size) {
-        return ApiResponse.success(houseService.search(district, communityName, status, page, size));
+    @PreAuthorize("hasAuthority('house:read')")
+    public ApiResponse<?> list(@ModelAttribute HouseModels.Search search) {
+        return ApiResponse.success(service.search(search));
     }
 
     @GetMapping("/{id}")
-    public ApiResponse<HouseSummary> getById(@PathVariable long id) {
-        return ApiResponse.success(houseService.findById(id));
+    @PreAuthorize("hasAuthority('house:read')")
+    public ApiResponse<?> detail(@PathVariable long id) {
+        return ApiResponse.success(service.detail(id));
+    }
+
+    @PostMapping
+    @PreAuthorize("hasAuthority('house:write')")
+    public ApiResponse<?> create(@Valid @RequestBody HouseModels.Write body) {
+        return ApiResponse.success(service.create(body));
+    }
+
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAuthority('house:write')")
+    public ApiResponse<?> update(
+            @PathVariable long id, @Valid @RequestBody HouseModels.Write body) {
+        return ApiResponse.success(service.update(id, body));
+    }
+
+    @PutMapping("/{id}/status")
+    @PreAuthorize("hasAuthority('house:write')")
+    public ApiResponse<?> status(
+            @PathVariable long id, @Valid @RequestBody HouseModels.StatusChange body) {
+        return ApiResponse.success(service.status(id, body));
+    }
+
+    @PutMapping("/{id}/verification")
+    @PreAuthorize("hasAuthority('house:verify')")
+    public ApiResponse<?> verify(
+            @PathVariable long id, @Valid @RequestBody HouseModels.Verification body) {
+        return ApiResponse.success(service.verify(id, body));
+    }
+
+    @PutMapping("/{id}/assignment")
+    @PreAuthorize("hasAuthority('house:assign')")
+    public ApiResponse<?> assign(
+            @PathVariable long id, @Valid @RequestBody HouseModels.Assignment body) {
+        return ApiResponse.success(service.assign(id, body));
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAuthority('house:write')")
+    public ApiResponse<?> delete(@PathVariable long id) {
+        service.delete(id);
+        return ApiResponse.success(null);
+    }
+
+    @GetMapping("/{id}/status-logs")
+    @PreAuthorize("hasAuthority('house:read')")
+    public ApiResponse<?> logs(@PathVariable long id) {
+        return ApiResponse.success(service.logs(id));
     }
 }

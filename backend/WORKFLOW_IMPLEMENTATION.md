@@ -143,4 +143,4 @@ V003 允许待审核账号暂时没有门店，增加账号状态与版本、申
 
 本次仅进行源码编译打包，不运行自动化测试，也不自动执行真实数据库迁移。已有测试夹具随字段和上架图片规则同步维护；这不代表新流程已通过自动化或人工验收。
 
-真实 MySQL 8 增量 DDL、前端页面、C 的复杂 SQL、D 的真实 Python 服务需要按 `INTEGRATION_CHECKLIST.md` 联调。现有 Java HTTP 适配器保留真实服务地址配置，不用模拟结果冒充实际服务成功。没有提交或推送本轮修改。
+真实 MySQL 8 增量 DDL、前端页面、C 的复杂 SQL、D 的真实 Python 服务需要按 `INTEGRATION_CHECKLIST.md` 联调。现有 Java HTTP 适配器保留真实服务地址配置，不用模拟结果冒充实际服务成功。队员新增报表接口已另行合并，兼容和数据口径见 `TEAM_REPORT_INTEGRATION.md`。

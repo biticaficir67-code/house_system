@@ -4,6 +4,8 @@ Spring Boot 3.5、Java 17、Spring Security、MyBatis、MySQL 8.0+。所有 Java
 
 ## 本次表格修改
 
+已合并队员新增的自定义报表接口；兼容调整和新上传全量 SQL 的使用边界见 [队员报表合并说明](TEAM_REPORT_INTEGRATION.md)。
+
 新增经纪人申请与审核、四种账号状态、本人资料、员工操作日志、媒体封面排序、共同委托、待跟进/回访、预约交接及成交核实拒绝重提。详见 [表格需求实现说明](WORKFLOW_IMPLEMENTATION.md) 和 [第三步联调清单](INTEGRATION_CHECKLIST.md)。
 
 升级已有开发库时必须在 V001、V002 后执行一次 V003；本次代码不会自动迁移或连接本机数据库。前端显示、C 的复杂 SQL、D 的实际算法服务按清单联调。

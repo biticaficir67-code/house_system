@@ -5,15 +5,52 @@ import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import system.auth.*;
+import system.common.*;
 import system.common.ApiResponse;
 
 @RestController
 @RequestMapping("/api")
 public class SystemController {
     private final SystemService service;
+    private final RegistrationService registration;
+    private final TaskService tasks;
 
-    public SystemController(SystemService service) {
+    public SystemController(
+            SystemService service, RegistrationService registration, TaskService tasks) {
         this.service = service;
+        this.registration = registration;
+        this.tasks = tasks;
+    }
+
+    @GetMapping("/tasks")
+    @PreAuthorize("hasAuthority('system:read')")
+    public ApiResponse<?> tasks(
+            @RequestParam String kind,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(tasks.list(kind, page, size));
+    }
+
+    @GetMapping("/users/{id}")
+    @PreAuthorize("hasAuthority('system:manage')")
+    public ApiResponse<?> user(@PathVariable long id) {
+        return ApiResponse.success(service.user(id));
+    }
+
+    @GetMapping("/users/{id}/logs")
+    @PreAuthorize("hasAuthority('system:manage')")
+    public ApiResponse<?> logs(
+            @PathVariable long id,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(service.logs(id, page, size));
+    }
+
+    @PutMapping("/users/{id}/review")
+    @PreAuthorize("hasAuthority('system:manage')")
+    public ApiResponse<?> review(@PathVariable long id, @Valid @RequestBody AuthModels.Review b) {
+        return ApiResponse.success(registration.review(id, b));
     }
 
     @GetMapping("/stores")
@@ -52,9 +89,11 @@ public class SystemController {
     @PreAuthorize("hasAuthority('system:manage')")
     public ApiResponse<?> users(
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Long storeId,
+            @RequestParam(required = false) String accountStatus,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.success(service.users(keyword, page, size));
+        return ApiResponse.success(service.users(keyword, storeId, accountStatus, page, size));
     }
 
     @PostMapping("/users")
@@ -81,7 +120,9 @@ public class SystemController {
 
     @GetMapping("/brokers")
     @PreAuthorize("hasAnyAuthority('system:read','house:write','showing:write')")
-    public ApiResponse<?> brokers(@RequestParam(required = false) Long storeId) {
-        return ApiResponse.success(service.brokers(storeId));
+    public ApiResponse<?> brokers(
+            @RequestParam(required = false) Long storeId,
+            @RequestParam(required = false) Boolean unbound) {
+        return ApiResponse.success(service.brokers(storeId, unbound));
     }
 }

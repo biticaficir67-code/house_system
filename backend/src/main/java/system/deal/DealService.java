@@ -17,16 +17,23 @@ public class DealService {
     private final ResourceAccess access;
     private final AccessScope scope;
     private final HouseService houses;
+    private final AuditService audit;
 
     public DealService(
-            DataStore db, ResourceAccess access, AccessScope scope, HouseService houses) {
+            DataStore db,
+            ResourceAccess access,
+            AccessScope scope,
+            HouseService houses,
+            AuditService audit) {
         this.db = db;
         this.access = access;
         this.scope = scope;
         this.houses = houses;
+        this.audit = audit;
     }
 
-    public Object list(Long houseId, Boolean verified, int page, int size) {
+    public Object list(
+            Long houseId, Boolean verified, String verificationStatus, int page, int size) {
         var p = args("house", houseId, "verified", verified);
         String filter = "";
         if (houseId != null) {
@@ -34,6 +41,11 @@ public class DealService {
             filter += " AND house_id=#{p.house}";
         }
         if (verified != null) filter += " AND verified=#{p.verified}";
+        if (verificationStatus != null) {
+            Checks.choice(verificationStatus, "PENDING", "APPROVED", "REJECTED");
+            p.put("verification", verificationStatus);
+            filter += " AND verification_status=#{p.verification}";
+        }
         return access.forPage("house_deal", filter, p, new PageQuery(page, size));
     }
 
@@ -114,11 +126,14 @@ public class DealService {
                         + " house_id=#{p.id} AND status='ACTIVE' AND deleted=0",
                 args("id", b.houseId()));
         houses.log(b.houseId(), "ON_SALE", "DEAL", "DEAL", "登记成交 #" + id, id(house, "storeId"));
+        audit.record("deal", id, "CREATE", "登记成交，待核实", null, detail(id));
         return detail(id);
     }
 
     @Transactional
     public Object edit(long id, DealModels.Edit b) {
+        var pre = access.get("house_deal", id, false);
+        var house = access.get("house", id(pre, "houseId"), true);
         var row = access.get("house_deal", id, true);
         HouseService.version(row, b.version());
         Checks.require(
@@ -140,8 +155,21 @@ public class DealService {
                         b.commissionYuan(),
                         "remark",
                         b.remark(),
+                        "verification_status",
+                        "PENDING",
+                        "verify_reason",
+                        null,
+                        "verified_by",
+                        null,
+                        "verified_at",
+                        null,
                         "version",
                         id(row, "version") + 1));
+        db.update(
+                "house",
+                id(house, "id"),
+                args("status_change_time", b.dealTime(), "version", id(house, "version") + 1));
+        audit.record("deal", id, "EDIT", "更正未核实成交，重新提交核实", row, detail(id));
         return detail(id);
     }
 
@@ -150,12 +178,15 @@ public class DealService {
         var row = access.get("house_deal", id, true);
         HouseService.version(row, b.version());
         Checks.require("CONFIRMED".equals(row.get("status")), "已撤销成交不能核实");
+        Checks.require("PENDING".equals(row.get("verificationStatus")), "只有待核实成交可以审核，拒绝后请先更正");
         db.update(
                 "house_deal",
                 id,
                 args(
                         "verified",
                         b.approved(),
+                        "verification_status",
+                        b.approved() ? "APPROVED" : "REJECTED",
                         "verified_by",
                         scope.user().id(),
                         "verified_at",
@@ -164,6 +195,7 @@ public class DealService {
                         b.reason(),
                         "version",
                         id(row, "version") + 1));
+        audit.record("deal", id, b.approved() ? "APPROVE" : "REJECT", b.reason(), row, detail(id));
         return detail(id);
     }
 
@@ -210,6 +242,12 @@ public class DealService {
                     id(customer, "id"),
                     args("status", "ACTIVE", "version", id(customer, "version") + 1));
         houses.log(id(house, "id"), "DEAL", "OFF", "DEAL_CANCEL", b.reason(), id(house, "storeId"));
+        audit.record("deal", id, "CANCEL", b.reason(), row, detail(id));
         return detail(id);
+    }
+
+    public Object logs(long id, int page, int size) {
+        detail(id);
+        return audit.list("deal", id, page, size);
     }
 }

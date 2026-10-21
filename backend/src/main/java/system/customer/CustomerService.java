@@ -17,11 +17,14 @@ public class CustomerService {
     private final DataStore db;
     private final ResourceAccess access;
     private final AccessScope scope;
+    private final AuditService audit;
 
-    public CustomerService(DataStore db, ResourceAccess access, AccessScope scope) {
+    public CustomerService(
+            DataStore db, ResourceAccess access, AccessScope scope, AuditService audit) {
         this.db = db;
         this.access = access;
         this.scope = scope;
+        this.audit = audit;
     }
 
     public Object list(String keyword, String status, int page, int size) {
@@ -30,7 +33,7 @@ public class CustomerService {
                 p.get("keyword") == null
                         ? ""
                         : " AND (name LIKE CONCAT('%',#{p.keyword},'%') OR phone LIKE"
-                              + " CONCAT('%',#{p.keyword},'%'))";
+                                + " CONCAT('%',#{p.keyword},'%'))";
         if (status != null) {
             Checks.choice(status, "ACTIVE", "DEAL", "INACTIVE");
             filter += " AND status=#{p.status}";
@@ -87,6 +90,7 @@ public class CustomerService {
         Checks.require(b.storeId() == null || id(old, "storeId") == b.storeId(), "客户不能直接跨店迁移");
         Long broker =
                 scope.broker(b.brokerId() == null ? (Long) old.get("brokerId") : b.brokerId());
+        Checks.require(Objects.equals(old.get("brokerId"), broker), "调整负责人请使用管理员交接接口并填写原因");
         access.broker(id(old, "storeId"), broker);
         db.update(
                 "customer",
@@ -113,14 +117,14 @@ public class CustomerService {
         Checks.require(
                 db.count(
                                 "SELECT COUNT(*) AS value FROM house_show WHERE customer_id=#{p.id}"
-                                    + " AND status='SCHEDULED' AND deleted=0",
+                                        + " AND status='SCHEDULED' AND deleted=0",
                                 args("id", id))
                         == 0,
                 "请先取消未完成预约");
         Checks.require(
                 db.count(
                                 "SELECT COUNT(*) AS value FROM house_deal WHERE customer_id=#{p.id}"
-                                    + " AND status='CONFIRMED' AND deleted=0",
+                                        + " AND status='CONFIRMED' AND deleted=0",
                                 args("id", id))
                         == 0,
                 "已成交客户应保留，不允许归档");
@@ -218,7 +222,69 @@ public class CustomerService {
                                 + where
                                 + " ORDER BY h.id DESC LIMIT #{p.limit}",
                         p);
-        rows.forEach(row -> row.put("matchExplanation", "满足已填写的区域、预算、面积、户型及装修条件；未填写项不参与匹配"));
+        rows.forEach(
+                row -> {
+                    var reasons = new ArrayList<String>();
+                    if (demand.get("districts") instanceof List<?> ds && !ds.isEmpty())
+                        reasons.add("意向区域：" + ds + "；房源区域：" + row.get("district"));
+                    for (String[] pair :
+                            List.of(
+                                    new String[] {"Price", "listingPriceYuan", "挂牌总价（元）"},
+                                    new String[] {"Area", "buildingAreaSqm", "面积（平方米）"},
+                                    new String[] {"Rooms", "rooms", "室数"})) {
+                        Object min = demand.get("min" + pair[0]), max = demand.get("max" + pair[0]);
+                        if (min != null || max != null)
+                            reasons.add(
+                                    pair[2]
+                                            + "要求 "
+                                            + Objects.toString(min, "不限")
+                                            + " 至 "
+                                            + Objects.toString(max, "不限")
+                                            + "，实际 "
+                                            + row.get(pair[1]));
+                    }
+                    if (demand.get("decoration") != null)
+                        reasons.add("装修要求与实际均为 " + row.get("decoration"));
+                    reasons.add("仅比较已填写条件；未填写项不限");
+                    row.put("matchExplanation", String.join("；", reasons));
+                    row.put("matchReasons", reasons);
+                });
         return rows;
+    }
+
+    @Transactional
+    public Object status(long id, CustomerModels.StatusChange b) {
+        Checks.choice(b.status(), "ACTIVE", "INACTIVE");
+        var row = access.get("customer", id, true);
+        HouseService.version(row, b.version());
+        Checks.require(!"DEAL".equals(row.get("status")), "成交客户状态由成交模块维护");
+        Checks.require(!Objects.equals(row.get("status"), b.status()), "客户已处于该状态");
+        if (b.status().equals("INACTIVE"))
+            Checks.require(
+                    db.count(
+                                    "SELECT COUNT(*) AS value FROM house_show WHERE"
+                                            + " customer_id=#{p.id} AND status='SCHEDULED' AND"
+                                            + " deleted=0",
+                                    args("id", id))
+                            == 0,
+                    "请先处理未完成预约");
+        db.update(
+                "customer",
+                id,
+                args(
+                        "status",
+                        b.status(),
+                        "inactive_reason",
+                        b.status().equals("INACTIVE") ? b.reason() : null,
+                        "version",
+                        id(row, "version") + 1));
+        audit.record(
+                "customer",
+                id,
+                "STATUS",
+                b.reason(),
+                args("status", row.get("status")),
+                args("status", b.status()));
+        return detail(id);
     }
 }

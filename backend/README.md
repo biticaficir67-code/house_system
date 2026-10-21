@@ -2,10 +2,16 @@
 
 Spring Boot 3.5、Java 17、Spring Security、MyBatis、MySQL 8.0+。所有 Java 文件保持在 `src/main/java/system`，业务模块内直接放 Controller/Service/Models，不增加 entity/dto/impl 等层级目录。
 
+## 本次表格修改
+
+新增经纪人申请与审核、四种账号状态、本人资料、员工操作日志、媒体封面排序、共同委托、待跟进/回访、预约交接及成交核实拒绝重提。详见 [表格需求实现说明](WORKFLOW_IMPLEMENTATION.md) 和 [第三步联调清单](INTEGRATION_CHECKLIST.md)。
+
+升级已有开发库时必须在 V001、V002 后执行一次 V003；本次代码不会自动迁移或连接本机数据库。前端显示、C 的复杂 SQL、D 的实际算法服务按清单联调。
+
 ## 已实现
 
 - 不透明 Bearer Token、BCrypt 密码、退出/改密后撤销会话、登录失败限流；管理员查看全部业务，经纪人只操作本人所在门店且由本人负责的数据。
-- 仅管理员 ADMIN、经纪人 BROKER 两种固定身份，每个账号选择一种；管理员统一开通内部账号，菜单由权限生成，后端逐接口鉴权。
+- 仅管理员 ADMIN、经纪人 BROKER 两种固定身份，每个账号选择一种；经纪人提交申请后由管理员审核，也保留管理员直接开通内部账号，菜单由权限生成，后端逐接口鉴权。
 - 管理员/经纪人工作台：今日预约、在售房源、待核验房源、待核实成交、委托到期与未读提醒。
 - 房源分页筛选、详情、录入编辑、负责人交接、核验、上下架、归档、状态时间线。
 - JPEG/PNG/WebP/MP4 上传、内容签名校验、受权限保护的媒体读取与逻辑删除。
@@ -19,7 +25,7 @@ Spring Boot 3.5、Java 17、Spring Security、MyBatis、MySQL 8.0+。所有 Java
 
 ## 两类人员的职责
 
-系统供内部人员使用。业主和客户是业务档案，由内部人员维护，不开设登录账号。门店是业务归属，不再设置门店管理人员角色。
+系统供内部人员使用。业主和客户是业务档案，由内部人员维护，不开设登录账号。经纪人可提交内部入职申请，审核通过才允许登录业务。门店是业务归属，不再设置门店管理人员角色。
 
 | 业务 | 管理员 ADMIN | 经纪人 BROKER |
 | --- | --- | --- |
@@ -41,7 +47,7 @@ Spring Boot 3.5、Java 17、Spring Security、MyBatis、MySQL 8.0+。所有 Java
 
 1. 在**新建、没有业务数据的开发实例/库**中导入仓库 `../database/house_system_full.sql`。该原始全量文件包含 DROP TABLE，只用于初始化空库，不能对已有业务库重复导入。
 2. 连接 `house_system`，执行一次 `src/main/resources/db/migration/V001__backend_business.sql`。该脚本增加业务表和现有表的列，不删除组员的房源/带看数据。
-3. 接着执行一次 `src/main/resources/db/migration/V002__admin_broker_only.sql`，确认 `SELECT version FROM backend_schema_version;` 包含 1、2。已有 V001 库只执行 V002，勿重复运行 V001 的 ALTER TABLE。
+3. 接着执行一次 `src/main/resources/db/migration/V002__admin_broker_only.sql`，然后执行一次 `src/main/resources/db/migration/V003__workflow_completion.sql`；确认版本包含 1、2、3。已有 V001/V002 库仅补后续未执行版本，勿重复运行 ALTER TABLE。
 4. 原始带看数据标成 `LEGACY_DEMO`，不计入真实带看报表；导入房源保留 `LEGACY_IMPORT`。经纪人根据原 dept 关联门店；登录账号通过管理接口显式绑定经纪人。
 
 执行脚本需要数据库账号具备建表、修改表权限；日常运行账号仅需要业务表的查询/增改权限。开发时可先使用已有开发账号，配置值不写进 Git。

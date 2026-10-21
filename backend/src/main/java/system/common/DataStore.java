@@ -19,6 +19,8 @@ public class DataStore {
                     "orientation",
                     "tags",
                     "permissions",
+                    "before_snapshot",
+                    "after_snapshot",
                     "districts",
                     "price_interval",
                     "input_snapshot",

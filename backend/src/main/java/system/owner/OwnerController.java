@@ -27,6 +27,29 @@ public class OwnerController {
         return ApiResponse.success(service.list(keyword, page, size));
     }
 
+    @GetMapping("/duplicates")
+    @PreAuthorize("hasAuthority('owner:read')")
+    public ApiResponse<?> duplicates(
+            @RequestParam String phone, @RequestParam(required = false) Long excludeId) {
+        return ApiResponse.success(follow.duplicates("owner", phone, excludeId));
+    }
+
+    @PutMapping("/{id}/assignment")
+    @PreAuthorize("hasAuthority('system:manage')")
+    public ApiResponse<?> assignment(
+            @PathVariable long id, @Valid @RequestBody FollowUpService.Assignment b) {
+        return ApiResponse.success(follow.assign("owner", id, b));
+    }
+
+    @GetMapping("/{id}/logs")
+    @PreAuthorize("hasAuthority('owner:read')")
+    public ApiResponse<?> logs(
+            @PathVariable long id,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(follow.logs("owner", id, page, size));
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('owner:read')")
     public ApiResponse<?> detail(@PathVariable long id) {

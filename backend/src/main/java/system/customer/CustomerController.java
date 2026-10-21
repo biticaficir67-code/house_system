@@ -28,6 +28,29 @@ public class CustomerController {
         return ApiResponse.success(service.list(keyword, status, page, size));
     }
 
+    @GetMapping("/duplicates")
+    @PreAuthorize("hasAuthority('customer:read')")
+    public ApiResponse<?> duplicates(
+            @RequestParam String phone, @RequestParam(required = false) Long excludeId) {
+        return ApiResponse.success(follow.duplicates("customer", phone, excludeId));
+    }
+
+    @PutMapping("/{id}/assignment")
+    @PreAuthorize("hasAuthority('system:manage')")
+    public ApiResponse<?> assignment(
+            @PathVariable long id, @Valid @RequestBody FollowUpService.Assignment b) {
+        return ApiResponse.success(follow.assign("customer", id, b));
+    }
+
+    @GetMapping("/{id}/logs")
+    @PreAuthorize("hasAuthority('customer:read')")
+    public ApiResponse<?> logs(
+            @PathVariable long id,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(follow.logs("customer", id, page, size));
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('customer:read')")
     public ApiResponse<?> detail(@PathVariable long id) {
@@ -59,6 +82,13 @@ public class CustomerController {
     public ApiResponse<?> demand(
             @PathVariable long id, @Valid @RequestBody CustomerModels.Demand b) {
         return ApiResponse.success(service.demand(id, b));
+    }
+
+    @PutMapping("/{id}/status")
+    @PreAuthorize("hasAuthority('customer:write')")
+    public ApiResponse<?> status(
+            @PathVariable long id, @Valid @RequestBody CustomerModels.StatusChange b) {
+        return ApiResponse.success(service.status(id, b));
     }
 
     @GetMapping("/{id}/matches")

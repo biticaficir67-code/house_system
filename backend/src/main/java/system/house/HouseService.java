@@ -19,16 +19,19 @@ public class HouseService {
     private final AccessScope scope;
     private final ResourceAccess access;
     private final ApplicationEventPublisher events;
+    private final AuditService audit;
 
     public HouseService(
             DataStore db,
             AccessScope scope,
             ResourceAccess access,
-            ApplicationEventPublisher events) {
+            ApplicationEventPublisher events,
+            AuditService audit) {
         this.db = db;
         this.scope = scope;
         this.access = access;
         this.events = events;
+        this.audit = audit;
     }
 
     public PageResponse<Map<String, Object>> search(HouseModels.Search search) {
@@ -52,6 +55,23 @@ public class HouseService {
                 "h.community_name LIKE CONCAT('%',#{p.community},'%')");
         if (search.status() != null) Checks.choice(search.status(), "ON_SALE", "OFF", "DEAL");
         filter(condition, p, "status", search.status(), "h.status=#{p.status}");
+        if (search.verificationStatus() != null)
+            Checks.choice(search.verificationStatus(), "PENDING", "VERIFIED", "REJECTED");
+        filter(
+                condition,
+                p,
+                "verification",
+                search.verificationStatus(),
+                "h.verification_status=#{p.verification}");
+        String order =
+                switch (Objects.toString(search.sortBy(), "CREATED_AT")) {
+                    case "CREATED_AT" -> "h.create_time";
+                    case "PRICE" -> "h.listing_price_yuan";
+                    case "AREA" -> "h.building_area_sqm";
+                    default -> throw new BusinessException(400, "sortBy 支持 CREATED_AT/PRICE/AREA");
+                };
+        String direction = Objects.toString(search.sortDirection(), "DESC");
+        Checks.choice(direction, "ASC", "DESC");
         filter(condition, p, "store", search.storeId(), "h.store_id=#{p.store}");
         filter(condition, p, "broker", search.brokerId(), "h.broker_id=#{p.broker}");
         if (search.rooms() != null) Checks.require(search.rooms() > 0, "室数必须大于 0");
@@ -67,10 +87,16 @@ public class HouseService {
                 page.page(),
                 page.size(),
                 db.list(
-                        "SELECT h.*,b.broker_name FROM house h LEFT JOIN broker b ON"
-                                + " b.id=h.broker_id WHERE "
+                        "SELECT h.*,b.broker_name,(SELECT m.id FROM house_media m WHERE"
+                            + " m.house_id=h.id AND m.deleted=0 AND m.media_type='IMAGE' ORDER BY"
+                            + " m.is_cover DESC,m.sort_order,m.id LIMIT 1) AS cover_media_id FROM"
+                            + " house h LEFT JOIN broker b ON b.id=h.broker_id WHERE "
                                 + condition
-                                + " ORDER BY h.id DESC LIMIT #{p.size} OFFSET #{p.offset}",
+                                + " ORDER BY "
+                                + order
+                                + " "
+                                + direction
+                                + ",h.id DESC LIMIT #{p.size} OFFSET #{p.offset}",
                         p));
     }
 
@@ -94,8 +120,9 @@ public class HouseService {
                 "media",
                 db.list(
                         "SELECT"
-                            + " id,house_id,media_type,original_name,content_type,file_size,created_at"
-                            + " FROM house_media WHERE house_id=#{p.id} AND deleted=0 ORDER BY id",
+                            + " id,house_id,media_type,original_name,content_type,file_size,created_at,is_cover,sort_order"
+                            + " FROM house_media WHERE house_id=#{p.id} AND deleted=0 ORDER BY"
+                            + " sort_order,id",
                         args("id", id)));
         var analysis =
                 db.optional(
@@ -109,6 +136,21 @@ public class HouseService {
                             analysis.get("inputHash"),
                             system.ai.AiFeatures.hash(db, system.ai.AiFeatures.text(row))));
         row.put("textAnalysis", analysis);
+        row.put(
+                "latestVerification",
+                db.optional(
+                                "SELECT * FROM house_status_log WHERE house_id=#{p.id} AND"
+                                        + " event_type='VERIFY' ORDER BY id DESC LIMIT 1",
+                                args("id", id))
+                        .orElse(null));
+        row.put(
+                "entrustmentSummary",
+                db.list(
+                        "SELECT id,owner_id,start_date,end_date,status,agreement_id FROM"
+                            + " owner_entrustment WHERE house_id=#{p.id} AND deleted=0 ORDER BY id"
+                            + " DESC LIMIT 100",
+                        args("id", id)));
+        row.put("operations", audit.list("house", id, 1, 100));
         return row;
     }
 
@@ -267,6 +309,13 @@ public class HouseService {
         }
         values.put("verification_status", "PENDING");
         db.update("house", id, values);
+        audit.record(
+                "house",
+                id,
+                "EDIT",
+                "更新房源资料",
+                args("listingPriceYuan", old.get("listingPriceYuan")),
+                args("listingPriceYuan", b.listingPriceYuan()));
         log(
                 id,
                 (String) old.get("status"),
@@ -276,7 +325,8 @@ public class HouseService {
                 id(old, "storeId"));
         if (!Objects.equals(old.get("coreSelling"), b.coreSelling())
                 || !Objects.equals(old.get("communityIntro"), b.communityIntro())
-                || !Objects.equals(old.get("surrounding"), b.surrounding()))
+                || !Objects.equals(old.get("surrounding"), b.surrounding())
+                || !Objects.equals(old.get("district"), b.district()))
             events.publishEvent(new HouseModels.Changed(id, scope.user().id()));
         return detail(id);
     }
@@ -294,11 +344,45 @@ public class HouseService {
         Checks.require(!"DEAL".equals(old.get("status")), "成交状态只能通过成交记录流转");
         Checks.require(!Objects.equals(old.get("status"), b.status()), "房源已处于该状态");
         if ("ON_SALE".equals(b.status())) {
+            var missing = new ArrayList<String>();
+            if (old.get("storeId") == null) missing.add("所属门店");
+            if (old.get("brokerId") == null) missing.add("负责经纪人");
+            if (!(old.get("listingPriceYuan") instanceof Number price) || price.doubleValue() <= 0)
+                missing.add("大于零的挂牌价格");
+            if (!"VERIFIED".equals(old.get("verificationStatus"))) missing.add("核验通过");
+            for (String field :
+                    List.of(
+                            "communityName",
+                            "district",
+                            "buildingAreaSqm",
+                            "rooms",
+                            "halls",
+                            "bathrooms"))
+                if (old.get(field) == null
+                        || old.get(field) instanceof String text && text.isBlank())
+                    missing.add(field);
+            if (db.count(
+                            "SELECT COUNT(*) AS value FROM house_media WHERE house_id=#{p.id} AND"
+                                    + " media_type='IMAGE' AND deleted=0",
+                            args("id", id))
+                    == 0) missing.add("至少一张图片");
+            Checks.require(missing.isEmpty(), "上架缺少：" + String.join("、", missing));
+            access.store(id(old, "storeId"));
+            access.broker(
+                    id(old, "storeId"), old.get("brokerId") == null ? null : id(old, "brokerId"));
             Checks.require("VERIFIED".equals(old.get("verificationStatus")), "核验通过后才能上架");
             Checks.require(
                     old.get("listingPriceYuan") instanceof Number n && n.doubleValue() > 0,
                     "挂牌价格必须大于 0");
             Checks.require(old.get("brokerId") != null, "上架前须指定负责人");
+        } else {
+            Checks.require(
+                    db.count(
+                                    "SELECT COUNT(*) AS value FROM house_show WHERE"
+                                        + " house_id=#{p.id} AND status='SCHEDULED' AND deleted=0",
+                                    args("id", id))
+                            == 0,
+                    "存在待执行预约，请先取消、完成或处理预约后再下架");
         }
         db.update(
                 "house",
@@ -319,6 +403,7 @@ public class HouseService {
         var old = access.get("house", id, true);
         version(old, b.version());
         Checks.require("OFF".equals(old.get("status")), "只有已下架房源可以核验");
+        Checks.require("PENDING".equals(old.get("verificationStatus")), "该房源已核验，资料变更后可重新提交");
         db.update(
                 "house",
                 id,
@@ -343,6 +428,10 @@ public class HouseService {
         version(old, b.version());
         access.store(b.storeId());
         access.broker(b.storeId(), b.brokerId());
+        Checks.require(
+                !Objects.equals(old.get("brokerId"), b.brokerId())
+                        || !Objects.equals(old.get("storeId"), b.storeId()),
+                "负责人与门店未改变");
         if (!Objects.equals(old.get("storeId"), b.storeId())) {
             Checks.require(scope.user().administrator(), "跨门店交接需要管理员权限");
             for (String table : List.of("owner_entrustment", "house_show", "house_deal"))
@@ -365,6 +454,13 @@ public class HouseService {
                         b.brokerId(),
                         "version",
                         id(old, "version") + 1));
+        audit.record(
+                "house",
+                id,
+                "ASSIGN",
+                b.reason(),
+                args("storeId", old.get("storeId"), "brokerId", old.get("brokerId")),
+                args("storeId", b.storeId(), "brokerId", b.brokerId()));
         log(
                 id,
                 (String) old.get("status"),
@@ -395,6 +491,26 @@ public class HouseService {
                 "请先取消未完成预约");
         db.update("house", id, args("deleted", true, "version", id(old, "version") + 1));
         log(id, "OFF", "OFF", "ARCHIVE", "归档房源", id(old, "storeId"));
+    }
+
+    public long mediaChanged(long id, String event) {
+        var old = access.get("house", id, true);
+        Checks.require(!"DEAL".equals(old.get("status")), "已成交房源不能调整媒体");
+        long version = id(old, "version") + 1;
+        db.update(
+                "house",
+                id,
+                args(
+                        "status",
+                        "OFF",
+                        "verification_status",
+                        "PENDING",
+                        "version",
+                        version,
+                        "status_change_time",
+                        LocalDateTime.now()));
+        log(id, (String) old.get("status"), "OFF", event, "媒体变更，重新核验", id(old, "storeId"));
+        return version;
     }
 
     public Object logs(long id) {

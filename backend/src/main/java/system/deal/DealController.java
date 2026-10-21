@@ -21,15 +21,25 @@ public class DealController {
     public ApiResponse<?> list(
             @RequestParam(required = false) Long houseId,
             @RequestParam(required = false) Boolean verified,
+            @RequestParam(required = false) String verificationStatus,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.success(service.list(houseId, verified, page, size));
+        return ApiResponse.success(service.list(houseId, verified, verificationStatus, page, size));
     }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('deal:read')")
     public ApiResponse<?> detail(@PathVariable long id) {
         return ApiResponse.success(service.detail(id));
+    }
+
+    @GetMapping("/{id}/logs")
+    @PreAuthorize("hasAuthority('deal:read')")
+    public ApiResponse<?> logs(
+            @PathVariable long id,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(service.logs(id, page, size));
     }
 
     @PostMapping

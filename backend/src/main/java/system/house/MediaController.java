@@ -1,5 +1,7 @@
 package system.house;
 
+import jakarta.validation.Valid;
+
 import org.springframework.core.io.Resource;
 import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -43,5 +45,21 @@ public class MediaController {
     public ApiResponse<?> delete(@PathVariable long houseId, @PathVariable long id) {
         service.delete(houseId, id);
         return ApiResponse.success(null);
+    }
+
+    @PutMapping("/{id}/cover")
+    @PreAuthorize("hasAuthority('house:write')")
+    public ApiResponse<?> cover(
+            @PathVariable long houseId,
+            @PathVariable long id,
+            @Valid @RequestBody HouseModels.MediaCover b) {
+        return ApiResponse.success(service.cover(houseId, id, b));
+    }
+
+    @PutMapping("/order")
+    @PreAuthorize("hasAuthority('house:write')")
+    public ApiResponse<?> order(
+            @PathVariable long houseId, @Valid @RequestBody HouseModels.MediaOrder b) {
+        return ApiResponse.success(service.reorder(houseId, b));
     }
 }

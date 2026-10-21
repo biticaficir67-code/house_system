@@ -6,7 +6,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
-import system.common.ApiResponse;
+import system.common.*;
 
 import java.time.LocalDateTime;
 
@@ -38,6 +38,22 @@ public class ShowingController {
     @PreAuthorize("hasAuthority('showing:read')")
     public ApiResponse<?> detail(@PathVariable long id) {
         return ApiResponse.success(service.detail(id));
+    }
+
+    @PutMapping("/{id}/assignment")
+    @PreAuthorize("hasAuthority('system:manage')")
+    public ApiResponse<?> assign(
+            @PathVariable long id, @Valid @RequestBody FollowUpService.Assignment b) {
+        return ApiResponse.success(service.assign(id, b));
+    }
+
+    @GetMapping("/{id}/logs")
+    @PreAuthorize("hasAuthority('showing:read')")
+    public ApiResponse<?> logs(
+            @PathVariable long id,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        return ApiResponse.success(service.logs(id, page, size));
     }
 
     @PostMapping

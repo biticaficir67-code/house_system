@@ -22,18 +22,24 @@ public class SystemService {
     private final ResourceAccess access;
     private final PasswordEncoder passwords;
     private final AuthService auth;
+    private final AuditService audit;
+    private final TaskService tasks;
 
     public SystemService(
             DataStore db,
             AccessScope scope,
             ResourceAccess access,
             PasswordEncoder passwords,
-            AuthService auth) {
+            AuthService auth,
+            AuditService audit,
+            TaskService tasks) {
         this.db = db;
         this.scope = scope;
         this.access = access;
         this.passwords = passwords;
         this.auth = auth;
+        this.audit = audit;
+        this.tasks = tasks;
     }
 
     public List<Map<String, Object>> stores() {
@@ -78,7 +84,7 @@ public class SystemService {
         return rows;
     }
 
-    public Object users(String keyword, int page, int size) {
+    public Object users(String keyword, Long storeId, String accountStatus, int page, int size) {
         PageQuery query = new PageQuery(page, size);
         var p =
                 args(
@@ -91,12 +97,22 @@ public class SystemService {
         String filter =
                 p.get("keyword") == null
                         ? ""
-                        : " WHERE username LIKE CONCAT('%',#{p.keyword},'%') OR display_name LIKE"
-                                + " CONCAT('%',#{p.keyword},'%')";
+                        : " WHERE (username LIKE CONCAT('%',#{p.keyword},'%') OR display_name LIKE"
+                                + " CONCAT('%',#{p.keyword},'%'))";
+        if (filter.isEmpty()) filter = " WHERE 1=1";
+        if (storeId != null) {
+            p.put("store", storeId);
+            filter += " AND store_id=#{p.store}";
+        }
+        if (accountStatus != null) {
+            Checks.choice(accountStatus, "PENDING", "ACTIVE", "REJECTED", "DISABLED");
+            p.put("status", accountStatus);
+            filter += " AND account_status=#{p.status}";
+        }
         var rows =
                 db.list(
                         "SELECT"
-                            + " id,username,display_name,phone,store_id,broker_id,enabled,created_at"
+                            + " id,username,display_name,phone,store_id,broker_id,enabled,account_status,review_reason,reviewed_by,reviewed_at,version,created_at"
                             + " FROM sys_user"
                                 + filter
                                 + " ORDER BY id DESC LIMIT #{p.size} OFFSET #{p.offset}",
@@ -113,6 +129,28 @@ public class SystemService {
                                         args("id", row.get("id")))));
         return new PageResponse<>(
                 db.count("SELECT COUNT(*) AS value FROM sys_user" + filter, p), page, size, rows);
+    }
+
+    public Map<String, Object> user(long id) {
+        var row =
+                db.one(
+                        "SELECT"
+                            + " id,username,display_name,phone,store_id,broker_id,enabled,account_status,review_reason,reviewed_by,reviewed_at,version,created_at"
+                            + " FROM sys_user WHERE id=#{p.id}",
+                        args("id", id));
+        row.put(
+                "roles",
+                db.list(
+                        "SELECT r.id,r.code,r.name FROM sys_role r JOIN sys_user_role ur ON"
+                                + " ur.role_id=r.id WHERE ur.user_id=#{p.id} AND r.code IN"
+                                + " ('ADMIN','BROKER')",
+                        args("id", id)));
+        return row;
+    }
+
+    public Object logs(long id, int page, int size) {
+        user(id);
+        return audit.list("user", id, page, size);
     }
 
     private String roleCode(List<Long> roles) {
@@ -158,7 +196,9 @@ public class SystemService {
         else if (broker != null) {
             var row =
                     db.one("SELECT * FROM broker WHERE id=#{p.id} FOR UPDATE", args("id", broker));
-            access.broker(body.storeId(), broker);
+            Checks.require(
+                    row.get("storeId") != null && id(row, "storeId") == body.storeId(),
+                    "经纪人档案不属于该门店");
             Checks.require(row.get("userId") == null, "该经纪人已绑定登录账号");
         }
         long userId =
@@ -181,6 +221,7 @@ public class SystemService {
                                 true));
         if (broker != null) db.update("broker", broker, args("user_id", userId));
         assignRoles(userId, body.roleIds());
+        audit.record("user", userId, "CREATE", "管理员开通内部账号", null, user(userId));
         return userId;
     }
 
@@ -188,6 +229,11 @@ public class SystemService {
     public void updateUser(long id, SystemModels.UserUpdate body) {
         db.one("SELECT * FROM sys_bootstrap WHERE id=1 FOR UPDATE", args());
         var old = db.one("SELECT * FROM sys_user WHERE id=#{p.id} FOR UPDATE", args("id", id));
+        system.house.HouseService.version(old, body.version());
+        Checks.require(
+                Set.of("ACTIVE", "DISABLED").contains(old.get("accountStatus")),
+                "待审核或已拒绝的账号必须通过审核接口处理");
+        var before = user(id);
         boolean brokerRole = "BROKER".equals(roleCode(body.roleIds()));
         access.store(body.storeId());
         long adminRole = id(db.one("SELECT id FROM sys_role WHERE code='ADMIN'", args()), "id");
@@ -202,7 +248,8 @@ public class SystemService {
                     db.count(
                                     "SELECT COUNT(*) AS value FROM sys_user u JOIN sys_user_role ur"
                                             + " ON ur.user_id=u.id WHERE ur.role_id=#{p.role} AND"
-                                            + " u.enabled=1 AND u.id<>#{p.id}",
+                                            + " u.enabled=1 AND u.account_status='ACTIVE' AND"
+                                            + " u.id<>#{p.id}",
                                     args("role", adminRole, "id", id))
                             > 0,
                     "必须保留至少一个启用的管理员");
@@ -210,11 +257,21 @@ public class SystemService {
         Checks.require(id != scope.user().id() || body.enabled(), "不能停用自己的账号");
         if (!Objects.equals(old.get("storeId"), body.storeId()) && old.get("brokerId") != null) {
             for (String table : List.of("house", "owner", "customer", "house_show", "house_deal")) {
+                String unfinished =
+                        switch (table) {
+                            case "house" -> " AND status<>'DEAL'";
+                            case "customer" -> " AND status='ACTIVE'";
+                            case "house_show" -> " AND status='SCHEDULED'";
+                            case "house_deal" ->
+                                    " AND status='CONFIRMED' AND verification_status<>'APPROVED'";
+                            default -> "";
+                        };
                 Checks.require(
                         db.count(
                                         "SELECT COUNT(*) AS value FROM "
                                                 + table
-                                                + " WHERE broker_id=#{p.broker} AND deleted=0",
+                                                + " WHERE broker_id=#{p.broker} AND deleted=0"
+                                                + unfinished,
                                         args("broker", old.get("brokerId")))
                                 == 0,
                         "经纪人仍有业务记录，须先交接后再调整门店");
@@ -252,7 +309,11 @@ public class SystemService {
                         "broker_id",
                         broker,
                         "enabled",
-                        body.enabled()));
+                        body.enabled(),
+                        "account_status",
+                        body.enabled() ? "ACTIVE" : "DISABLED",
+                        "version",
+                        id(old, "version") + 1));
         if (broker != null)
             db.update(
                     "broker",
@@ -273,6 +334,7 @@ public class SystemService {
                                     .get("name")));
         assignRoles(id, body.roleIds());
         auth.revokeUser(id);
+        audit.record("user", id, "UPDATE", body.reason(), before, user(id));
     }
 
     @Transactional
@@ -281,20 +343,30 @@ public class SystemService {
         db.update(
                 "sys_user", id, args("password_hash", passwords.encode(Checks.password(password))));
         auth.revokeUser(id);
+        audit.record("user", id, "RESET_PASSWORD", "管理员重置密码", null, null);
     }
 
-    public Object brokers(Long storeId) {
+    public Object brokers(Long storeId, Boolean unbound) {
         var p = args("store", storeId);
         String condition = scope.sql("b", p);
+        if (Boolean.TRUE.equals(unbound)) {
+            if (!scope.user().administrator()) throw new BusinessException(403, "仅管理员可查询待绑定档案");
+            return db.list(
+                    "SELECT b.id,b.broker_name,b.phone,b.dept,b.store_id,b.user_id FROM broker b"
+                        + " WHERE b.user_id IS NULL"
+                            + (storeId == null ? "" : " AND b.store_id=#{p.store}")
+                            + " ORDER BY b.id",
+                    p);
+        }
         // broker owns itself; AccessScope's broker_id column is provided by this derived table.
         return db.list(
                 "SELECT b.id,b.broker_name,b.phone,b.dept,b.store_id,b.user_id FROM "
                         + "(SELECT broker.*,id AS broker_id FROM broker) b WHERE "
                         + condition
-                        + " AND (b.user_id IS NULL OR EXISTS (SELECT 1 FROM sys_user u JOIN"
+                        + " AND EXISTS (SELECT 1 FROM sys_user u JOIN"
                         + " sys_user_role ur ON ur.user_id=u.id JOIN sys_role r ON r.id=ur.role_id"
                         + " WHERE u.id=b.user_id AND u.broker_id=b.id AND u.enabled=1 AND"
-                        + " r.code='BROKER' AND r.enabled=1))"
+                        + " u.account_status='ACTIVE' AND r.code='BROKER' AND r.enabled=1)"
                         + (storeId == null ? "" : " AND b.store_id=#{p.store}")
                         + " ORDER BY b.id",
                 p);
@@ -321,10 +393,11 @@ public class SystemService {
         String deals = " FROM house_deal r WHERE r.deleted=0 AND " + own;
         String entrustments =
                 " FROM owner_entrustment r WHERE r.deleted=0 AND r.status='ACTIVE' AND"
-                    + " r.end_date>=#{p.todayDate} AND r.end_date<=#{p.dueDate} AND "
+                        + " r.end_date>=#{p.todayDate} AND r.end_date<=#{p.dueDate} AND "
                         + own;
         String pendingHouses = houses + " AND r.status='OFF' AND r.verification_status='PENDING'";
-        String pendingDeals = deals + " AND r.status='CONFIRMED' AND r.verified=0";
+        String pendingDeals =
+                deals + " AND r.status='CONFIRMED' AND r.verification_status='PENDING'";
         String unread =
                 " FROM owner_reminder m JOIN owner_entrustment r ON r.id=m.entrustment_id WHERE"
                     + " r.deleted=0 AND r.status IN ('ACTIVE','EXPIRED') AND m.read_status='UNREAD'"
@@ -359,44 +432,48 @@ public class SystemService {
                         "expiringEntrustments",
                                 db.count("SELECT COUNT(*) AS value" + entrustments, p),
                         "unreadReminders", db.count("SELECT COUNT(*) AS value" + unread, p));
-        return args(
-                "role",
-                scope.user().administrator() ? "ADMIN" : "BROKER",
-                "dataScope",
-                scope.user().dataScope(),
-                "date",
-                today,
-                "canVerify",
-                scope.user().administrator(),
-                "counts",
-                counts,
-                "pendingHouses",
-                db.list(
-                        "SELECT r.id,r.community_name,r.store_id,r.broker_id,r.version"
-                                + pendingHouses
-                                + " ORDER BY r.id LIMIT 5",
-                        p),
-                "pendingDeals",
-                db.list(
-                        "SELECT"
-                            + " r.id,r.house_id,r.customer_id,r.broker_id,r.transaction_price_yuan,r.version"
-                                + pendingDeals
-                                + " ORDER BY r.id LIMIT 5",
-                        p),
-                "todayShowings",
-                db.list(
-                        "SELECT"
-                            + " r.id,r.house_id,r.customer_id,r.broker_id,r.appointment_time,r.version"
-                                + showings
-                                + " AND r.status='SCHEDULED' AND r.appointment_time>=#{p.today} AND"
-                                + " r.appointment_time<#{p.tomorrow} ORDER BY"
-                                + " r.appointment_time,r.id LIMIT 5",
-                        p),
-                "expiringEntrustments",
-                db.list(
-                        "SELECT r.id,r.owner_id,r.house_id,r.end_date"
-                                + entrustments
-                                + " ORDER BY r.end_date,r.id LIMIT 5",
-                        p));
+        var result =
+                args(
+                        "role",
+                        scope.user().administrator() ? "ADMIN" : "BROKER",
+                        "dataScope",
+                        scope.user().dataScope(),
+                        "date",
+                        today,
+                        "canVerify",
+                        scope.user().administrator(),
+                        "counts",
+                        counts,
+                        "pendingHouses",
+                        db.list(
+                                "SELECT r.id,r.community_name,r.store_id,r.broker_id,r.version"
+                                        + pendingHouses
+                                        + " ORDER BY r.id LIMIT 5",
+                                p),
+                        "pendingDeals",
+                        db.list(
+                                "SELECT"
+                                    + " r.id,r.house_id,r.customer_id,r.broker_id,r.transaction_price_yuan,r.version"
+                                        + pendingDeals
+                                        + " ORDER BY r.id LIMIT 5",
+                                p),
+                        "todayShowings",
+                        db.list(
+                                "SELECT"
+                                    + " r.id,r.house_id,r.customer_id,r.broker_id,r.appointment_time,r.version"
+                                        + showings
+                                        + " AND r.status='SCHEDULED' AND"
+                                        + " r.appointment_time>=#{p.today} AND"
+                                        + " r.appointment_time<#{p.tomorrow} ORDER BY"
+                                        + " r.appointment_time,r.id LIMIT 5",
+                                p),
+                        "expiringEntrustments",
+                        db.list(
+                                "SELECT r.id,r.owner_id,r.house_id,r.end_date"
+                                        + entrustments
+                                        + " ORDER BY r.end_date,r.id LIMIT 5",
+                                p));
+        result.put("tasks", tasks.summary());
+        return result;
     }
 }

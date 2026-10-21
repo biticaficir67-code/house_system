@@ -97,36 +97,23 @@ public class AuthService {
 
     @Transactional
     public Map<String, Object> login(AuthModels.Login request, String client) {
-        if (request.password().getBytes(StandardCharsets.UTF_8).length > 72)
-            throw new BusinessException(401, "用户名或密码错误");
-        String key = hash(client + ":" + request.username().toLowerCase(Locale.ROOT));
-        LocalDateTime now = LocalDateTime.now();
-        failures.entrySet().removeIf(entry -> entry.getValue().until().isBefore(now));
-        Attempt attempt = failures.get(key);
-        if (attempt != null && attempt.count() >= 5)
-            throw new BusinessException(429, "登录失败次数过多，请 5 分钟后重试");
-        var user =
-                db.optional(
-                                "SELECT * FROM sys_user WHERE username=#{p.username}",
-                                args("username", request.username()))
-                        .orElse(null);
-        if (user == null
-                || !truth(user.get("enabled"))
-                || !passwords.matches(request.password(), (String) user.get("passwordHash"))) {
-            if (failures.size() > 10_000) failures.clear();
-            failures.compute(
-                    key,
-                    (ignored, old) ->
-                            new Attempt(old == null ? 1 : old.count() + 1, now.plusMinutes(5)));
-            throw new BusinessException(401, "用户名或密码错误");
+        var user = verifyCredentials(request, client);
+        String state = (String) user.get("accountStatus");
+        if (!"ACTIVE".equals(state) || !truth(user.get("enabled"))) {
+            String message =
+                    switch (Objects.toString(state, "")) {
+                        case "PENDING" -> "注册申请待审核";
+                        case "REJECTED" ->
+                                "注册申请已拒绝：" + Objects.toString(user.get("reviewReason"), "请核验申请状态");
+                        default -> "账号已停用，请联系管理员";
+                    };
+            throw new BusinessException(403, message);
         }
         UserPrincipal principal = principal(user);
-        if (principal.permissions().isEmpty()) throw new BusinessException(403, "账号尚未分配可用角色");
-        failures.remove(key);
         byte[] bytes = new byte[32];
         random.nextBytes(bytes);
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-        LocalDateTime expires = now.plusHours(tokenHours);
+        LocalDateTime expires = LocalDateTime.now().plusHours(tokenHours);
         db.insert(
                 "auth_session",
                 args(
@@ -141,6 +128,33 @@ public class AuthService {
         return args("token", token, "tokenType", "Bearer", "expiresAt", expires, "user", principal);
     }
 
+    public Map<String, Object> verifyCredentials(AuthModels.Login request, String client) {
+        if (request.password().getBytes(StandardCharsets.UTF_8).length > 72)
+            throw new BusinessException(401, "用户名或密码错误");
+        String key = hash(client + ":" + request.username().toLowerCase(Locale.ROOT));
+        LocalDateTime now = LocalDateTime.now();
+        failures.entrySet().removeIf(entry -> entry.getValue().until().isBefore(now));
+        Attempt attempt = failures.get(key);
+        if (attempt != null && attempt.count() >= 5)
+            throw new BusinessException(429, "登录失败次数过多，请 5 分钟后重试");
+        var user =
+                db.optional(
+                                "SELECT * FROM sys_user WHERE username=#{p.username}",
+                                args("username", request.username()))
+                        .orElse(null);
+        if (user == null
+                || !passwords.matches(request.password(), (String) user.get("passwordHash"))) {
+            if (failures.size() > 10_000) failures.clear();
+            failures.compute(
+                    key,
+                    (ignored, old) ->
+                            new Attempt(old == null ? 1 : old.count() + 1, now.plusMinutes(5)));
+            throw new BusinessException(401, "用户名或密码错误");
+        }
+        failures.remove(key);
+        return user;
+    }
+
     public UserPrincipal authenticate(String token) {
         if (token.length() < 32 || token.length() > 256)
             throw new BusinessException(401, "Token 无效");
@@ -148,7 +162,8 @@ public class AuthService {
                 db.optional(
                                 "SELECT u.* FROM auth_session s JOIN sys_user u ON u.id=s.user_id"
                                         + " WHERE s.token_hash=#{p.hash} AND s.revoked=0 AND"
-                                        + " s.expires_at>#{p.now} AND u.enabled=1",
+                                        + " s.expires_at>#{p.now} AND u.enabled=1 AND"
+                                        + " u.account_status='ACTIVE'",
                                 args("hash", hash(token), "now", LocalDateTime.now()))
                         .orElseThrow(() -> new BusinessException(401, "Token 已失效"));
         return principal(row);
@@ -222,5 +237,7 @@ public class AuthService {
 
     public void revokeUser(long id) {
         db.execute("UPDATE auth_session SET revoked=1 WHERE user_id=#{p.id}", args("id", id));
+        db.execute(
+                "UPDATE application_session SET revoked=1 WHERE user_id=#{p.id}", args("id", id));
     }
 }

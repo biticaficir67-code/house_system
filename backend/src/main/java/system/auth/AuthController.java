@@ -13,10 +13,45 @@ import system.security.AccessScope;
 public class AuthController {
     private final AuthService auth;
     private final AccessScope scope;
+    private final RegistrationService registration;
 
-    public AuthController(AuthService auth, AccessScope scope) {
+    public AuthController(AuthService auth, AccessScope scope, RegistrationService registration) {
         this.auth = auth;
         this.scope = scope;
+        this.registration = registration;
+    }
+
+    @PostMapping("/register")
+    public ApiResponse<?> register(@Valid @RequestBody AuthModels.Register b) {
+        return ApiResponse.success(registration.register(b));
+    }
+
+    @PostMapping("/application-session")
+    public ApiResponse<?> applicationSession(
+            @Valid @RequestBody AuthModels.Login b, HttpServletRequest request) {
+        return ApiResponse.success(registration.session(b, request.getRemoteAddr()));
+    }
+
+    @GetMapping("/application")
+    public ApiResponse<?> application(@RequestHeader("X-Application-Token") String token) {
+        return ApiResponse.success(registration.application(token));
+    }
+
+    @PutMapping("/application")
+    public ApiResponse<?> reapply(
+            @RequestHeader("X-Application-Token") String token,
+            @Valid @RequestBody AuthModels.Reapply b) {
+        return ApiResponse.success(registration.reapply(token, b));
+    }
+
+    @GetMapping("/profile")
+    public ApiResponse<?> profile() {
+        return ApiResponse.success(registration.profile());
+    }
+
+    @PutMapping("/profile")
+    public ApiResponse<?> profile(@Valid @RequestBody AuthModels.Profile b) {
+        return ApiResponse.success(registration.profile(b));
     }
 
     @PostMapping("/bootstrap")

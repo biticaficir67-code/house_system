@@ -206,6 +206,18 @@ class BackendIntegrationTest {
 
     JsonNode publish(JsonNode house) throws Exception {
         String path = "/api/houses/" + house.get("id").asText();
+        byte[] picture =
+                java.util.Base64.getDecoder()
+                        .decode(
+                                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=");
+        mvc.perform(
+                        multipart(path + "/media")
+                                .file(
+                                        new MockMultipartFile(
+                                                "file", "cover.png", "image/png", picture))
+                                .header("Authorization", "Bearer " + admin))
+                .andExpect(status().isOk());
+        house = ok(HttpMethod.GET, path, null, admin);
         JsonNode verified =
                 ok(
                         HttpMethod.PUT,

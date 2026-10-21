@@ -1,4 +1,6 @@
-# API 联调约定 v2（管理员 / 经纪人）
+# API 联调约定 v3（表格第二、三步）
+
+新增接口及完整字段见 [WORKFLOW_IMPLEMENTATION.md](WORKFLOW_IMPLEMENTATION.md)，人工联调清单见 [INTEGRATION_CHECKLIST.md](INTEGRATION_CHECKLIST.md)。
 
 所有业务路径以 `/api` 开头，业务 JSON 字段使用 camelCase；AI 的 inputSnapshot、priceInterval 等嵌套快照保留 Python 协议的 snake_case 键。请求头 `Authorization: Bearer <token>`。成功响应 HTTP 200：
 
@@ -20,6 +22,10 @@
 | POST | /auth/logout | 撤销当前 token |
 | PUT | /auth/password | oldPassword/newPassword；成功后全部旧 token 失效 |
 | GET | /auth/menus | 当前角色允许的菜单 key/name/permission |
+| POST | /auth/register | username/password/confirmPassword/displayName/phone?；仅申请 BROKER，返回独立 applicationToken |
+| POST | /auth/application-session | username/password；核验后获取20分钟申请凭证 |
+| GET/PUT | /auth/application | X-Application-Token；本人申请及历史 / REJECTED 后修改并重申，version必传 |
+| GET/PUT | /auth/profile | 本人资料 / displayName、phone、version，同步经纪人档案 |
 
 账号长度 3–64，允许字母数字及 _.-；新密码至少 10 字符，UTF-8 最多 72 字节。首次初始化在用户表为空且 BOOTSTRAP_KEY 已配置时启用。登录失败 5 次后，同一客户端地址与账号组合限流 5 分钟。
 
@@ -33,15 +39,19 @@
 | PUT | /stores/{id} | 更新 name/address/enabled |
 | GET | /roles | 仅返回 ADMIN、BROKER 两个固定身份，含 id/code/name/permissions/dataScope/enabled；不提供新增/编辑角色接口 |
 | GET | /workbench | 按当前身份返回今日业务统计、待核验与待核实记录、当日预约、近期到期委托 |
-| GET | /users?keyword=&page=1&size=20 | 用户及角色，不返回密码哈希 |
+| GET | /users?keyword=&storeId=&accountStatus=&page=1&size=20 | 用户及角色，不返回密码哈希 |
 | POST | /users | username/password/displayName/phone/storeId/brokerId?/roleIds |
-| PUT | /users/{id} | displayName/phone/storeId/enabled/roleIds；旧会话撤销 |
+| PUT | /users/{id} | displayName/phone/storeId/enabled/roleIds/version/reason；仅 ACTIVE/DISABLED，旧会话撤销 |
+| GET | /users/{id} | 员工详情、角色、账号状态及version，无密码 |
+| PUT | /users/{id}/review | approved/storeId?/brokerId?/reason/version；仅 PENDING，由管理员审核 |
+| GET | /users/{id}/logs | 注册、审核及管理员操作历史，page/size |
+| GET | /tasks?kind=&page=1&size=20 | 工作台完整待办，类型见实现说明 |
 | PUT | /users/{id}/password | password；重置并撤销全部会话 |
-| GET | /brokers?storeId= | 范围内经纪人；返回 id/brokerName/storeId/userId |
+| GET | /brokers?storeId=&unbound= | 默认有效经纪人；管理员可用 unbound=true 查待绑定旧档案 |
 
 仅 ADMIN 管理员、BROKER 经纪人。每个账号只能选择一个身份，roleIds 为单元素数组。ADMIN 的 dataScope 固定 ALL；BROKER 固定 OWN，同时限制本店与本人 brokerId，列表、详情、工作台、报表及导出使用相同范围。经纪人显式提交其他 storeId/brokerId 作为业务归属时返回 403；筛选不可见范围返回空列表，猜详情 ID 返回 404。账号权限由服务端固定映射，数据库中遗留的自定义权限、数据范围不能扩大经纪人的权限。店长、财务、内勤的独立身份和可配置角色接口已移除。
 
-ADMIN 拥有全部 permission：system:manage/system:read、house:read/house:write/house:verify/house:assign、owner:read/owner:write、customer:read/customer:write、showing:read/showing:write、deal:read/deal:write/deal:verify、ai:use、report:read。BROKER 拥有其中除 system:manage、house:verify、house:assign、deal:verify 外的权限，报表仅本人数据。接口鉴权独立于菜单显示。必须保留至少一个启用的 ADMIN，不得停用当前登录账号。业主和客户为业务资料，不是系统角色；没有对外注册、业主登录或客户登录接口。
+ADMIN 拥有全部 permission：system:manage/system:read、house:read/house:write/house:verify/house:assign、owner:read/owner:write、customer:read/customer:write、showing:read/showing:write、deal:read/deal:write/deal:verify、ai:use、report:read。BROKER 拥有其中除 system:manage、house:verify、house:assign、deal:verify 外的权限，报表仅本人数据。接口鉴权独立于菜单显示。必须保留至少一个启用的 ADMIN，不得停用当前登录账号。业主和客户为业务资料，不是系统角色；没有业主或客户登录接口。仅经纪人可申请注册，PENDING/REJECTED/DISABLED 不得登录业务；ACTIVE 才允许。待审核/已拒绝暂无门店和经纪人档案，管理员审批通过时建立关联。
 
 创建 BROKER 用户未指定 brokerId 时自动创建并关联经纪人档案；指定时仅能绑定同门店且未绑定账号的旧档案。创建 ADMIN 不创建经纪人档案，brokerId 必须为空。ADMIN 改为 BROKER 时自动补建缺失档案；BROKER 改为 ADMIN 保留原经纪人档案与历史业务，但该账号不再作为新业务的可选经纪人。被停用账号同样不可被分配新业务。未绑定账号的原始经纪人档案保留以供管理员绑定。账号列表不返回密码哈希；修改身份、停用、改密或重置密码撤销旧会话。有未交接业务的经纪人不可直接跨店调动。
 
@@ -76,7 +86,7 @@ ADMIN 拥有全部 permission：system:manage/system:read、house:read/house:wri
 
 | 方法 | 路径 | 权限/用途 |
 | --- | --- | --- |
-| GET | /houses | house:read；page/size/district/communityName/status/storeId/brokerId/rooms/minPrice/maxPrice/minArea/maxArea |
+| GET | /houses | house:read；page/size/district/communityName/status/storeId/brokerId/rooms/minPrice/maxPrice/minArea/maxArea/verificationStatus/sortBy/sortDirection |
 | GET | /houses/{id} | 详情、媒体元数据、已保存文案分析 |
 | POST | /houses | house:write；录入，默认 OFF + PENDING 核验 |
 | PUT | /houses/{id} | house:write；更新资料，version 必传；重新核验，在售房源自动下架 |
@@ -87,7 +97,9 @@ ADMIN 拥有全部 permission：system:manage/system:read、house:read/house:wri
 | GET | /houses/{id}/status-logs | house:read；创建、编辑、核验、交接、状态、成交时间线 |
 | POST | /houses/{id}/media | house:write；multipart/form-data 的 file 字段 |
 | GET | /houses/{id}/media/{id}/content | house:read；受权限保护的文件流 |
-| DELETE | /houses/{id}/media/{id} | house:write；移除媒体 |
+| DELETE | /houses/{id}/media/{id} | house:write；移除媒体，自动补选封面并重新核验 |
+| PUT | /houses/{id}/media/{mediaId}/cover | house:write；version，设置图片封面 |
+| PUT | /houses/{id}/media/order | house:write；mediaIds/version，全量有效媒体排序 |
 
 房源资料示例：
 
@@ -157,14 +169,15 @@ floorLevel：LOW/MIDDLE/HIGH/UNKNOWN；decoration：ROUGH/SIMPLE/FINE/OTHER/UNKN
 
 | 方法 | 路径 | 请求 |
 | --- | --- | --- |
-| GET | /deals | houseId/verified/page/size |
+| GET | /deals | houseId/verified/verificationStatus/page/size |
+| GET | /deals/{id}/logs | 核实、更正和撤销历史，page/size |
 | GET | /deals/{id} | 独立成交信息 |
 | POST | /deals | houseId/customerId/brokerId/dealTime/transactionPriceYuan/commissionYuan?/remark? |
 | PUT | /deals/{id} | dealTime/transactionPriceYuan/commissionYuan?/remark?/version；核实前可编辑 |
 | PUT | /deals/{id}/verification | approved/reason/version，需要 deal:verify |
 | PUT | /deals/{id}/cancel | reason/version |
 
-读取 deal:read，登记/编辑/撤销 deal:write。dealTime 不晚于当前时间，成交金额为正，佣金不得高于成交金额。一笔有效成交将房源转为 DEAL，挂牌价保持独立原值。新增默认 verified=false，经管理员核实后才纳入真实成交统计；核实后的成交撤销也需要管理员的 deal:verify。经纪人不能核实自己的成交。撤销保留原成交记录，房源恢复下架，委托和取消的预约不会自动复活。
+读取 deal:read，登记/编辑/撤销 deal:write。dealTime 不晚于当前时间，成交金额为正，佣金不得高于成交金额。一笔有效成交将房源转为 DEAL，挂牌价保持独立原值。新增默认 verified=false、verificationStatus=PENDING；管理员通过为 APPROVED，拒绝为 REJECTED，拒绝后编辑更正回到 PENDING。只有待核实可审核，经管理员核实后才纳入真实成交统计；核实后的成交撤销也需要管理员的 deal:verify。经纪人不能核实自己的成交。撤销保留原成交记录，房源恢复下架，委托和取消的预约不会自动复活。
 
 ## 8. AI 接入
 

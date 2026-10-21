@@ -17,6 +17,9 @@ public class IdSerializer extends JsonSerializer<Long> {
                         || key.endsWith("_id")
                         || key.equals("requestedBy")
                         || key.equals("createdBy")
+                        || key.equals("reviewedBy")
+                        || key.equals("verifiedBy")
+                        || key.equals("readBy")
                         || key.equals("changedBy"))) generator.writeString(value.toString());
         else generator.writeNumber(value);
     }

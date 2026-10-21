@@ -9,6 +9,11 @@ import java.util.List;
 public final class CustomerModels {
     private CustomerModels() {}
 
+    public record StatusChange(
+            @NotBlank String status,
+            @NotBlank @Size(max = 500) String reason,
+            @NotNull @Min(0) Long version) {}
+
     public record Write(
             @NotBlank @Size(max = 64) String name,
             @NotBlank @Size(max = 32) String phone,

@@ -53,7 +53,9 @@ public class ReportService {
             case "deals" -> {
                 table = "house_deal";
                 date = "deal_time";
-                extra = "r.deleted=0 AND r.status='CONFIRMED' AND r.verified=1";
+                extra =
+                        "r.deleted=0 AND r.status='CONFIRMED' AND r.verified=1 AND"
+                            + " r.verification_status='APPROVED'";
                 join = " JOIN house h ON h.id=r.house_id";
             }
             case "ai" -> {
@@ -129,13 +131,16 @@ public class ReportService {
         String metrics =
                 switch (kind) {
                     case "prices" ->
-                            "COUNT(listing_price_yuan) AS sample_count,AVG(listing_price_yuan) AS"
-                                + " average_listing_price_yuan,AVG(listing_price_yuan/NULLIF(building_area_sqm,0))"
-                                + " AS average_listing_unit_price_yuan_sqm";
+                            "COUNT(CASE WHEN listing_price_yuan>0 THEN 1 END) AS"
+                                + " sample_count,AVG(CASE WHEN listing_price_yuan>0 THEN"
+                                + " listing_price_yuan END) AS average_listing_price_yuan,AVG(CASE"
+                                + " WHEN listing_price_yuan>0 AND building_area_sqm>0 THEN"
+                                + " listing_price_yuan/building_area_sqm END) AS"
+                                + " average_listing_unit_price_yuan_sqm";
                     case "deals" ->
                             "COUNT(*) AS deal_count,SUM(transaction_price_yuan) AS"
-                                + " total_transaction_price_yuan,AVG(transaction_price_yuan) AS"
-                                + " average_transaction_price_yuan";
+                                    + " total_transaction_price_yuan,AVG(transaction_price_yuan) AS"
+                                    + " average_transaction_price_yuan";
                     default -> "COUNT(*) AS record_count";
                 };
         var rows =
@@ -167,7 +172,7 @@ public class ReportService {
                     case "deals" -> "仅统计有效且已核实成交";
                     case "showings" -> "仅统计新业务中已完成的实际带看，排除原始演示记录";
                     case "ai" -> "AI 请求记录，包含失败与不可估价";
-                    default -> "房源库存，保留导入来源标记";
+                    default -> "未归档房源档案，含下架、在售、已成交；可按 STATUS 分组，保留导入来源";
                 });
     }
 

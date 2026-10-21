@@ -26,7 +26,9 @@ public final class SystemModels {
             @Size(max = 32) String phone,
             @NotNull @Positive Long storeId,
             @NotNull Boolean enabled,
-            @NotEmpty @Size(max = 1) List<@NotNull @Positive Long> roleIds) {}
+            @NotEmpty @Size(max = 1) List<@NotNull @Positive Long> roleIds,
+            @NotNull @Min(0) Long version,
+            @NotBlank @Size(max = 500) String reason) {}
 
     public record ResetPassword(@NotBlank @Size(min = 10, max = 72) String password) {}
 }

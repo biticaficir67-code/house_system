@@ -54,14 +54,14 @@ public class ResourceAccess {
         Checks.require(
                 db.count(
                                 "SELECT COUNT(*) AS value FROM broker b WHERE b.id=#{p.id} AND"
-                                    + " b.store_id=#{p.store} AND (b.user_id IS NULL OR EXISTS"
-                                    + " (SELECT 1 FROM sys_user u JOIN sys_user_role ur ON"
-                                    + " ur.user_id=u.id JOIN sys_role r ON r.id=ur.role_id WHERE"
-                                    + " u.id=b.user_id AND u.broker_id=b.id AND u.enabled=1 AND"
-                                    + " r.code='BROKER' AND r.enabled=1))",
+                                    + " b.store_id=#{p.store} AND EXISTS (SELECT 1 FROM sys_user u"
+                                    + " JOIN sys_user_role ur ON ur.user_id=u.id JOIN sys_role r ON"
+                                    + " r.id=ur.role_id WHERE u.id=b.user_id AND u.broker_id=b.id"
+                                    + " AND u.enabled=1 AND u.account_status='ACTIVE' AND"
+                                    + " r.code='BROKER' AND r.enabled=1)",
                                 args("id", id, "store", storeId))
                         == 1,
-                "经纪人须属于该门店且账号为启用的经纪人身份，或为待绑定的原始档案");
+                "经纪人须属于该门店，且已绑定正常启用的经纪人账号");
     }
 
     public void sameStore(Map<String, Object> first, Map<String, Object> second) {

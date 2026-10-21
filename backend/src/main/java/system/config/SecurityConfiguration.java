@@ -51,6 +51,9 @@ public class SecurityConfiguration {
                                         .permitAll()
                                         .requestMatchers(
                                                 "/api/auth/login",
+                                                "/api/auth/register",
+                                                "/api/auth/application-session",
+                                                "/api/auth/application",
                                                 "/api/auth/bootstrap",
                                                 "/actuator/health",
                                                 "/actuator/health/**",
@@ -91,7 +94,12 @@ public class SecurityConfiguration {
         config.setAllowedOrigins(Arrays.stream(origins.split(",")).map(String::trim).toList());
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(
-                Arrays.asList("Authorization", "Content-Type", "X-Request-Id", "X-Bootstrap-Key"));
+                Arrays.asList(
+                        "Authorization",
+                        "Content-Type",
+                        "X-Request-Id",
+                        "X-Bootstrap-Key",
+                        "X-Application-Token"));
         config.setExposedHeaders(Arrays.asList("X-Request-Id", "Content-Disposition"));
         config.setAllowCredentials(false);
         config.setMaxAge(3600L);

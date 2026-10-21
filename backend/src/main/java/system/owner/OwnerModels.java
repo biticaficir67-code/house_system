@@ -23,7 +23,8 @@ public final class OwnerModels {
             @NotNull LocalDate endDate,
             @NotNull Boolean exclusive,
             @DecimalMin("0") @DecimalMax("1") BigDecimal commissionRate,
-            @Size(max = 5000) String remark) {}
+            @Size(max = 5000) String remark,
+            @Positive Long jointWithId) {}
 
     public record End(@NotBlank @Size(max = 500) String reason) {}
 }

@@ -238,3 +238,33 @@ CREATE TABLE IF NOT EXISTS ai_request_log (
 INSERT INTO sys_role(code,name,data_scope,permissions) SELECT 'ADMIN','管理员','ALL','["system:manage","system:read","house:read","house:write","house:verify","house:assign","owner:read","owner:write","customer:read","customer:write","showing:read","showing:write","deal:read","deal:write","deal:verify","ai:use","report:read"]' WHERE NOT EXISTS(SELECT 1 FROM sys_role WHERE code='ADMIN');
 INSERT INTO sys_role(code,name,data_scope,permissions) SELECT 'BROKER','经纪人','OWN','["system:read","house:read","house:write","owner:read","owner:write","customer:read","customer:write","showing:read","showing:write","deal:read","deal:write","ai:use","report:read"]' WHERE NOT EXISTS(SELECT 1 FROM sys_role WHERE code='BROKER');
 INSERT INTO backend_schema_version(version) VALUES(1);
+
+-- V003 fixture columns (H2 syntax; real MySQL uses the versioned migration).
+ALTER TABLE sys_user ALTER COLUMN store_id DROP NOT NULL;
+ALTER TABLE sys_user ADD COLUMN account_status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE';
+ALTER TABLE sys_user ADD COLUMN review_reason VARCHAR(500);
+ALTER TABLE sys_user ADD COLUMN reviewed_by BIGINT;
+ALTER TABLE sys_user ADD COLUMN reviewed_at DATETIME;
+ALTER TABLE sys_user ADD COLUMN version BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE house_media ADD COLUMN is_cover BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE house_media ADD COLUMN sort_order INT NOT NULL DEFAULT 0;
+ALTER TABLE owner ADD COLUMN next_contact_at DATETIME;
+ALTER TABLE customer ADD COLUMN next_contact_at DATETIME;
+ALTER TABLE customer ADD COLUMN inactive_reason VARCHAR(500);
+ALTER TABLE house_show ADD COLUMN next_contact_at DATETIME;
+ALTER TABLE owner_entrustment ADD COLUMN agreement_id BIGINT;
+ALTER TABLE house_deal ADD COLUMN verification_status VARCHAR(16) NOT NULL DEFAULT 'PENDING';
+ALTER TABLE ai_request_log ADD COLUMN house_version BIGINT;
+CREATE TABLE application_session (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, user_id BIGINT NOT NULL, token_hash VARCHAR(64) NOT NULL UNIQUE,
+ expires_at DATETIME NOT NULL, revoked BOOLEAN NOT NULL DEFAULT FALSE,
+ FOREIGN KEY(user_id) REFERENCES sys_user(id)
+);
+CREATE TABLE operation_log (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, resource_type VARCHAR(32) NOT NULL, resource_id BIGINT NOT NULL,
+ event_type VARCHAR(32) NOT NULL, actor_id BIGINT, reason VARCHAR(500),
+ before_snapshot LONGTEXT, after_snapshot LONGTEXT, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ KEY idx_operation_resource(resource_type,resource_id,id)
+);
+INSERT INTO backend_schema_version(version) VALUES(2);
+INSERT INTO backend_schema_version(version) VALUES(3);

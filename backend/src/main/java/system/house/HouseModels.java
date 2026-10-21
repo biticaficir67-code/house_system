@@ -56,7 +56,16 @@ public final class HouseModels {
             BigDecimal minPrice,
             BigDecimal maxPrice,
             BigDecimal minArea,
-            BigDecimal maxArea) {}
+            BigDecimal maxArea,
+            String verificationStatus,
+            String sortBy,
+            String sortDirection) {}
+
+    public record MediaOrder(
+            @NotEmpty @Size(max = 23) List<@NotNull @Positive Long> mediaIds,
+            @NotNull @Min(0) Long version) {}
+
+    public record MediaCover(@NotNull @Min(0) Long version) {}
 
     public record StatusChange(
             @NotBlank String status,

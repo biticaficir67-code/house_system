@@ -259,7 +259,9 @@ public class AiService {
                         "store_id",
                         house.get("storeId"),
                         "broker_id",
-                        house.get("brokerId")));
+                        house.get("brokerId"),
+                        "house_version",
+                        house.get("version")));
     }
 
     public Object predict(long houseId) {

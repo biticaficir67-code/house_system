@@ -1,0 +1,49 @@
+import { createApp } from 'vue'
+import axios from 'axios'
+import App from './App.vue'
+import router from './router'
+import store from './store'
+import installElementPlus from './plugins/element'
+import './assets/theme.css'
+
+const vapp = createApp(App)
+axios.defaults.baseURL = '/api'
+axios.interceptors.request.use(function (config) {
+  var token = window.sessionStorage.getItem('token')
+  if (token) {
+    config.headers.Authorization = 'Bearer ' + token
+  }
+  return config
+})
+axios.interceptors.response.use(
+  function (res) {
+    return res
+  },
+  function (err) {
+    if (err.response && err.response.status === 401) {
+      store.commit('logout')
+      router.push('/login')
+    }
+    return Promise.reject(err)
+  }
+)
+vapp.config.globalProperties.$axios = axios
+vapp.config.productionTip = false
+installElementPlus(vapp)
+vapp.use(store).use(router).mount('#app')
+
+router.beforeEach((to, from, next) => {
+  if (!to.matched.some(m => m.meta.auth)) {
+    if (store.state.isLogin == '0') {
+      alert('您没有登录，无权访问！')
+      next({
+        path: '/login',
+        query: { redirect: to.fullPath }
+      })
+    } else {
+      next()
+    }
+  } else {
+    next()
+  }
+})

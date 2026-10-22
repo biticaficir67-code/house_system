@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Login from '../views/Login.vue'
-import Dashboard from '../views/Dashboard.vue'
 import House from '../views/House.vue'
 import HouseMap from '../views/HouseMap.vue'
 import Owner from '../views/Owner.vue'
@@ -10,6 +9,8 @@ import Permission from '../views/Permission.vue'
 import PriceAdvice from '../views/PriceAdvice.vue'
 
 // 各业务页路径，登录页不校验登录态
+const Dashboard = () => import('../views/Dashboard.vue')
+
 const routes = [
   {
     path: '/',
@@ -28,6 +29,13 @@ const routes = [
   {
     path: '/dashboard',
     component: Dashboard
+  },
+  {
+    path: '/reports/preview',
+    component: Dashboard,
+    props: { preview: true },
+    // This public route renders independent samples and never calls business APIs.
+    meta: { auth: true }
   },
   {
     path: '/house',

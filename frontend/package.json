@@ -5,10 +5,13 @@
   "scripts": {
     "serve": "vite",
     "dev": "vite",
-    "build": "vite build"
+    "build": "vite build",
+    "test:reports": "node src/reports/reports-test.mjs && node src/reports/charts-test.mjs",
+    "test:pricing": "node src/reports/pricing-test.mjs"
   },
   "dependencies": {
     "axios": "^0.21.1",
+    "echarts": "^6.1.0",
     "element-plus": "^2.4.4",
     "leaflet": "^1.9.4",
     "vue": "^3.3.13",

@@ -40,7 +40,8 @@ public class AiController {
 
     @GetMapping("/requests")
     @PreAuthorize("hasAuthority('ai:use')")
-    public ApiResponse<?> requests(@PathVariable long houseId) {
-        return ApiResponse.success(service.requests(houseId));
+    public ApiResponse<?> requests(
+            @PathVariable long houseId, @RequestParam(required = false) String kind) {
+        return ApiResponse.success(service.requests(houseId, kind));
     }
 }

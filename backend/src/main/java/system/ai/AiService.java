@@ -18,7 +18,6 @@ import system.config.AiIntegrationProperties;
 import system.security.AccessScope;
 
 import java.io.*;
-import java.math.BigDecimal;
 import java.net.URI;
 import java.time.*;
 import java.util.*;
@@ -277,7 +276,7 @@ public class AiService {
         long logId = tx.execute(status -> requestLog(house, actor, request, "PRICE", input, hash));
         try {
             var result = call(addresses.priceBaseUrl(), "/ai/predict/price", input, 10);
-            validatePrediction(result);
+            PricePredictionContract.validate(result);
             long record =
                     tx.execute(
                             status -> {
@@ -389,37 +388,6 @@ public class AiService {
         }
     }
 
-    private static void validatePrediction(Map<String, Object> result) throws IOException {
-        Object status = result.get("status");
-        if (!List.of("DEMO_ONLY", "UNAVAILABLE").contains(status)
-                || !"HISTORICAL_DEMO".equals(result.get("usage"))
-                || !"LISTING_UNVERIFIED".equals(result.get("price_basis"))
-                || result.get("model_version") == null
-                || result.get("data_version") == null
-                || result.get("generated_at") == null)
-            throw new IOException("Invalid price result contract");
-        if ("UNAVAILABLE".equals(status)) {
-            if (result.get("estimated_unit_price_yuan_sqm") != null
-                    || result.get("estimated_total_price_yuan") != null
-                    || result.get("price_interval") != null)
-                throw new IOException("Unavailable prices must be null");
-        } else {
-            BigDecimal unit =
-                    new BigDecimal(String.valueOf(result.get("estimated_unit_price_yuan_sqm")));
-            BigDecimal total =
-                    new BigDecimal(String.valueOf(result.get("estimated_total_price_yuan")));
-            if (unit.signum() <= 0
-                    || total.signum() <= 0
-                    || !(result.get("price_interval") instanceof Map<?, ?> interval))
-                throw new IOException("Invalid price");
-            BigDecimal
-                    lower = new BigDecimal(String.valueOf(interval.get("lower_total_price_yuan"))),
-                    upper = new BigDecimal(String.valueOf(interval.get("upper_total_price_yuan")));
-            if (lower.signum() <= 0 || lower.compareTo(total) > 0 || upper.compareTo(total) < 0)
-                throw new IOException("Invalid price interval");
-        }
-    }
-
     public Object history(long house) {
         var current = access.get("house", house, false);
         String hash = AiFeatures.hash(db, AiFeatures.price(current));
@@ -436,10 +404,13 @@ public class AiService {
         return rows;
     }
 
-    public Object requests(long house) {
+    public Object requests(long house, String kind) {
         access.get("house", house, false);
+        if (kind != null) Checks.choice(kind, "PRICE", "TEXT");
         return db.list(
-                "SELECT * FROM ai_request_log WHERE house_id=#{p.id} ORDER BY id DESC LIMIT 100",
-                args("id", house));
+                "SELECT * FROM ai_request_log WHERE house_id=#{p.id}"
+                        + (kind == null ? "" : " AND kind=#{p.kind}")
+                        + " ORDER BY id DESC LIMIT 100",
+                args("id", house, "kind", kind));
     }
 }

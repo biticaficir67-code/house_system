@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import reportEngine from './reportEngine.mjs';
+
+const {demo,mergeMonths,rowsFrom}=reportEngine;
+const filter={from:'2026-05-01',to:'2026-10-22',storeId:''};
+const all=demo(filter), narrow=demo({...filter,from:'2026-10-01'});
+const sum=(rows,index)=>rows.reduce((n,r)=>n+r[index],0);
+assert.equal(sum(all.trend,1),all.overview.showings);
+assert.equal(sum(all.trend,2),all.overview.deals);
+assert.equal(sum(all.stores,1),sum(all.stock,1));
+assert.equal(sum(all.rooms,1),sum(all.stock,1));
+assert.equal(sum(all.decoration,1),sum(all.stock,1));
+assert.equal(sum(all.ranking,1),all.overview.deals);
+assert.equal(sum(all.cycle,1),all.overview.deals);
+assert.ok(narrow.overview.showings<all.overview.showings);
+assert.ok(narrow.overview.ai<all.overview.ai);
+const stores=['1','2','3'].map(storeId=>demo({...filter,storeId}));
+for(const metric of ['inventory','showings','deals','ai'])assert.equal(stores.reduce((n,r)=>n+r.overview[metric],0),all.overview[metric]);
+assert.deepEqual(demo({...filter,from:'2027-01-01',to:'2027-02-01'}).overview,{inventory:0,showings:0,deals:0,ai:0});
+assert.deepEqual(mergeMonths([['2026-01',2]],[['2026-02',1]]),[['2026-01',2,0],['2026-02',0,1]]);
+assert.deepEqual(rowsFrom([{house_count:'3',group_name:'滨江区'}],['groupName','houseCount']),[['滨江区',3]]);
+assert.deepEqual(rowsFrom({records:[{groupKey:'西湖区',averageListingUnitPriceYuanSqm:null}]},['groupKey','averageListingUnitPriceYuanSqm']),[['西湖区',null]]);
+assert.throws(()=>rowsFrom({},['groupName','houseCount']),/数据格式/);
+console.log('PASS: report totals, date/store filtering, empty results, month alignment, API field mapping');

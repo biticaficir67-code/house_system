@@ -441,7 +441,7 @@ CREATE TABLE `house_show` (
   `house_id` bigint NOT NULL COMMENT '关联房源ID',
   `customer_id` bigint DEFAULT NULL COMMENT '关联客户ID',
   `broker_id` bigint NOT NULL COMMENT '执行带看的经纪人ID',
-  `completed_time` datetime NOT NULL COMMENT '带看完成时间',
+  `completed_time` datetime DEFAULT NULL COMMENT '带看完成时间',
   `customer_name` varchar(64) DEFAULT NULL COMMENT '客户姓名（演示用）',
   `remark` text COMMENT '带看备注/回访记录',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',

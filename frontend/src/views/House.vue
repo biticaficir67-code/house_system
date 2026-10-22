@@ -57,6 +57,16 @@
 
     <el-dialog :title="formTitle" v-model="formVisible" width="640px">
       <el-form ref="form" :model="form" :rules="rules" label-width="120px">
+        <el-form-item label="门店" prop="storeId">
+          <el-select v-model="form.storeId" placeholder="请选择门店" style="width:100%" @change="onStoreChange">
+            <el-option v-for="s in stores" :key="s.id" :label="s.name" :value="s.id"></el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="经纪人">
+          <el-select v-model="form.brokerId" placeholder="可空" clearable style="width:100%">
+            <el-option v-for="b in brokers" :key="b.id" :label="b.brokerName || b.name" :value="b.id"></el-option>
+          </el-select>
+        </el-form-item>
         <el-form-item label="城市" prop="city">
           <el-input v-model="form.city"></el-input>
         </el-form-item>
@@ -104,7 +114,12 @@
           </el-select>
         </el-form-item>
         <el-form-item label="用途" prop="propertyUsage">
-          <el-input v-model="form.propertyUsage"></el-input>
+          <el-select v-model="form.propertyUsage" style="width:100%">
+            <el-option label="普通住宅" value="RESIDENTIAL"></el-option>
+            <el-option label="商住" value="MIXED_USE"></el-option>
+            <el-option label="别墅" value="VILLA"></el-option>
+            <el-option label="车库" value="GARAGE"></el-option>
+          </el-select>
         </el-form-item>
         <el-form-item label="挂牌价(元)" prop="listingPriceYuan">
           <el-input v-model="form.listingPriceYuan"></el-input>
@@ -168,15 +183,18 @@ export default {
       isEdit: false,
       current: {},
       ai: { advantages: [], disadvantages: [] },
+      stores: [],
+      brokers: [],
       form: {},
       rules: {
+        storeId: [{ required: true, message: '请选择门店', trigger: 'change' }],
         city: [{ required: true, message: '请输入城市', trigger: 'blur' }],
         district: [{ required: true, message: '请输入区域', trigger: 'blur' }],
         communityName: [{ required: true, message: '请输入小区', trigger: 'blur' }],
         buildingAreaSqm: [{ required: true, message: '请输入面积', trigger: 'blur' }],
         floorLevel: [{ required: true, message: '请选择楼层档', trigger: 'change' }],
         totalFloors: [{ required: true, message: '请输入总楼层', trigger: 'blur' }],
-        orientation: [{ required: true, message: '请选择朝向', trigger: 'change' }],
+        orientation: [{ required: true, type: 'array', min: 1, message: '请选择朝向', trigger: 'change' }],
         decoration: [{ required: true, message: '请选择装修', trigger: 'change' }],
         propertyUsage: [{ required: true, message: '请输入用途', trigger: 'blur' }]
       }
@@ -188,6 +206,7 @@ export default {
     }
   },
   created() {
+    this.loadStores()
     this.init()
   },
   methods: {
@@ -211,6 +230,30 @@ export default {
     },
     statusClass(s) {
       return s === 'ON_SALE' ? 'st-on' : 'st-off'
+    },
+    loadStores() {
+      this.$axios.get('/stores').then((res) => {
+        var list = res.data.data || []
+        this.stores = Array.isArray(list) ? list : (list.records || [])
+      }).catch(() => {
+        this.stores = []
+      })
+    },
+    loadBrokers(storeId) {
+      if (!storeId) {
+        this.brokers = []
+        return
+      }
+      this.$axios.get('/brokers', { params: { storeId: storeId } }).then((res) => {
+        var list = res.data.data || []
+        this.brokers = Array.isArray(list) ? list : (list.records || [])
+      }).catch(() => {
+        this.brokers = []
+      })
+    },
+    onStoreChange(val) {
+      this.form.brokerId = ''
+      this.loadBrokers(val)
     },
     asList(v) {
       if (Array.isArray(v)) return v
@@ -261,6 +304,9 @@ export default {
     openAdd() {
       this.isEdit = false
       this.formTitle = '新增房源'
+      var defaultStore = this.isAdmin
+        ? (this.stores[0] ? this.stores[0].id : '')
+        : this.$store.state.storeId
       this.form = {
         city: '杭州',
         district: '',
@@ -277,8 +323,11 @@ export default {
         listingPriceYuan: '',
         coreSelling: '',
         communityIntro: '',
-        surrounding: ''
+        surrounding: '',
+        storeId: defaultStore,
+        brokerId: this.isAdmin ? '' : this.$store.state.brokerId
       }
+      this.loadBrokers(defaultStore)
       this.formVisible = true
     },
     openEdit(row) {
@@ -294,6 +343,7 @@ export default {
           }
         }
         if (!this.form.orientation) this.form.orientation = ['S']
+        this.loadBrokers(this.form.storeId)
         this.formVisible = true
       }).catch((err) => {
         this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
@@ -320,6 +370,8 @@ export default {
         coreSelling: f.coreSelling,
         communityIntro: f.communityIntro,
         surrounding: f.surrounding,
+        storeId: f.storeId ? Number(f.storeId) : null,
+        brokerId: f.brokerId ? Number(f.brokerId) : null,
         version: f.version
       }
     },

@@ -34,6 +34,11 @@
     </div>
     <el-dialog :title="formTitle" v-model="formVisible" width="460px">
       <el-form ref="form" :model="form" :rules="rules" label-width="100px">
+        <el-form-item label="门店" prop="storeId">
+          <el-select v-model="form.storeId" placeholder="请选择门店" style="width:100%">
+            <el-option v-for="s in stores" :key="s.id" :label="s.name" :value="s.id"></el-option>
+          </el-select>
+        </el-form-item>
         <el-form-item label="姓名" prop="name">
           <el-input v-model="form.name"></el-input>
         </el-form-item>
@@ -67,16 +72,32 @@ export default {
       formTitle: '新增客户',
       isEdit: false,
       form: {},
+      stores: [],
       rules: {
+        storeId: [{ required: true, message: '请选择门店', trigger: 'change' }],
         name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
         phone: [{ required: true, message: '请输入电话', trigger: 'blur' }]
       }
     }
   },
+  computed: {
+    isAdmin() {
+      return this.$store.state.role === 'ADMIN'
+    }
+  },
   created() {
+    this.loadStores()
     this.init()
   },
   methods: {
+    loadStores() {
+      this.$axios.get('/stores').then((res) => {
+        var list = res.data.data || []
+        this.stores = Array.isArray(list) ? list : (list.records || [])
+      }).catch(() => {
+        this.stores = []
+      })
+    },
     errMsg(err) {
       if (err.response && err.response.data && err.response.data.message) return err.response.data.message
       return '请求失败'
@@ -103,7 +124,9 @@ export default {
     openAdd() {
       this.isEdit = false
       this.formTitle = '新增客户'
-      this.form = {}
+      this.form = {
+        storeId: this.isAdmin ? (this.stores[0] ? this.stores[0].id : '') : this.$store.state.storeId
+      }
       this.formVisible = true
     },
     openEdit(row) {
@@ -126,6 +149,7 @@ export default {
           name: this.form.name,
           phone: this.form.phone,
           remark: this.form.remark,
+          storeId: this.form.storeId ? Number(this.form.storeId) : null,
           version: this.form.version
         }
         var req = this.isEdit

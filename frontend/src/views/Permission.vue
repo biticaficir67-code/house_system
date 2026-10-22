@@ -5,6 +5,7 @@
       <h2>权限和角色管理</h2>
     </div>
     <div class="box1">
+      <!-- 管理员审核经纪人注册申请 -->
       <el-table :data="applyList" stripe border>
         <el-table-column prop="username" label="用户名"></el-table-column>
         <el-table-column prop="displayName" label="姓名"></el-table-column>
@@ -28,6 +29,7 @@
 </template>
 <script>
 import NavMain from '@/components/NavMain.vue'
+// 只有管理员能进，通过或拒绝注册申请
 export default {
   name: 'Permission',
   components: { NavMain },
@@ -50,6 +52,7 @@ export default {
       if (err.response && err.response.data && err.response.data.message) return err.response.data.message
       return '请求失败'
     },
+    // 拉用户列表，待审核的才能点通过/拒绝
     init() {
       this.$axios.get('/users', { params: { page: 1, size: 50 } }).then((res) => {
         var d = res.data.data || {}
@@ -66,6 +69,7 @@ export default {
       if (!this.stores.length) return null
       return this.stores[0].id
     },
+    // 审核通过时要带上一个门店
     pass(row) {
       var storeId = this.firstStoreId()
       if (!storeId) {

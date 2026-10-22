@@ -2,12 +2,14 @@ import { createRouter, createWebHistory } from 'vue-router'
 import Login from '../views/Login.vue'
 import Dashboard from '../views/Dashboard.vue'
 import House from '../views/House.vue'
+import HouseMap from '../views/HouseMap.vue'
 import Owner from '../views/Owner.vue'
 import Customer from '../views/Customer.vue'
 import Showing from '../views/Showing.vue'
 import Permission from '../views/Permission.vue'
 import PriceAdvice from '../views/PriceAdvice.vue'
 
+// 各业务页路径，登录页不校验登录态
 const routes = [
   {
     path: '/',
@@ -30,6 +32,10 @@ const routes = [
   {
     path: '/house',
     component: House
+  },
+  {
+    path: '/house-map',
+    component: HouseMap
   },
   {
     path: '/addHouse',

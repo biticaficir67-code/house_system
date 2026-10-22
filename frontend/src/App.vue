@@ -1,4 +1,5 @@
 <template>
+  <!-- 根组件只放路由出口 -->
   <router-view/>
 </template>
 <style>

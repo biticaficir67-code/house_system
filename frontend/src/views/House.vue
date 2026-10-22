@@ -3,8 +3,10 @@
     <NavMain></NavMain>
     <div class="page-head">
       <h2>房源管理</h2>
+      <div class="sub">左侧列表，右侧按小区标注位置</div>
     </div>
     <div class="box1">
+      <!-- 按小区、区域筛选 -->
       <el-form :inline="true" :model="searchForm">
         <el-form-item label="小区">
           <el-input v-model="searchForm.communityName"></el-input>
@@ -15,46 +17,61 @@
         <el-form-item>
           <el-button @click="search">查询</el-button>
           <el-button type="primary" @click="openAdd">新增房源</el-button>
+          <el-button @click="goMap">房源地图</el-button>
         </el-form-item>
       </el-form>
-      <el-table :data="tableData" stripe border>
-        <el-table-column prop="id" label="编号" width="80"></el-table-column>
-        <el-table-column label="房源信息" min-width="240">
-          <template #default="scope">
-            <div class="house-name">{{ scope.row.communityName }}　{{ scope.row.district }}</div>
-            <div class="house-sub">{{ roomText(scope.row) }} / {{ scope.row.buildingAreaSqm }}㎡ / {{ priceWan(scope.row.listingPriceYuan) }}万</div>
-            <div>
-              <span class="tag" v-for="(t, i) in scope.row.advantages" :key="'a'+i">{{ t }}</span>
-              <span class="tag tag-warn" v-for="(t, i) in scope.row.disadvantages" :key="'d'+i">{{ t }}</span>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="90">
-          <template #default="scope">
-            <span :class="statusClass(scope.row.status)">{{ statusText(scope.row.status) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="360">
-          <template #default="scope">
-            <el-button size="small" type="primary" @click="openDetail(scope.row)">详情</el-button>
-            <el-button size="small" type="warning" @click="openEdit(scope.row)">修改</el-button>
-            <el-button size="small" type="warning" v-if="isAdmin" @click="verify(scope.row)">核验</el-button>
-            <el-button size="small" type="info" v-if="scope.row.status === 'ON_SALE'" @click="off(scope.row)">下架</el-button>
-            <el-button size="small" type="success" v-else-if="scope.row.status === 'OFF'" @click="onSale(scope.row)">上架</el-button>
-            <el-button size="small" plain type="primary" @click="goPrice(scope.row)">价格建议</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-pagination
-        style="margin-top:12px"
-        layout="prev, pager, next"
-        :page-size="size"
-        :current-page="page"
-        :total="total"
-        @current-change="pageChange">
-      </el-pagination>
+      <div class="house-split">
+        <!-- 左侧列表：增删改查和文案标签 -->
+        <div class="house-list">
+          <el-table class="house-table" :data="tableData" stripe border max-height="560" highlight-current-row @row-click="onRowClick">
+            <el-table-column prop="id" label="编号" width="70" align="center" header-align="center"></el-table-column>
+            <el-table-column label="房源信息" min-width="200" align="center" header-align="center">
+              <template #default="scope">
+                <div class="house-name">{{ scope.row.communityName }}　{{ scope.row.district }}</div>
+                <div class="house-sub">{{ roomText(scope.row) }} / {{ scope.row.buildingAreaSqm }}㎡ / {{ priceWan(scope.row.listingPriceYuan) }}万</div>
+                <div class="tag-row">
+                  <span class="tag" v-for="(t, i) in scope.row.advantages" :key="'a'+i">{{ t }}</span>
+                  <span class="tag tag-warn" v-for="(t, i) in scope.row.disadvantages" :key="'d'+i">{{ t }}</span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="80" align="center" header-align="center">
+              <template #default="scope">
+                <span :class="statusClass(scope.row.status)">{{ statusText(scope.row.status) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="250" align="center" header-align="center">
+              <template #default="scope">
+                <div class="ops">
+                  <el-button size="small" type="primary" @click.stop="openDetail(scope.row)">详情</el-button>
+                  <el-button size="small" type="warning" @click.stop="openEdit(scope.row)">修改</el-button>
+                  <el-button size="small" type="warning" v-if="isAdmin" @click.stop="verify(scope.row)">核验</el-button>
+                  <el-button size="small" type="info" v-if="scope.row.status === 'ON_SALE'" @click.stop="off(scope.row)">下架</el-button>
+                  <el-button size="small" type="success" v-else-if="scope.row.status === 'OFF'" @click.stop="onSale(scope.row)">上架</el-button>
+                  <el-button size="small" plain type="primary" @click.stop="goPrice(scope.row)">价格建议</el-button>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-pagination
+            class="house-page"
+            style="margin-top:12px"
+            layout="prev, pager, next"
+            :page-size="size"
+            :current-page="page"
+            :total="total"
+            @current-change="pageChange">
+          </el-pagination>
+        </div>
+        <!-- 右侧小区地图 -->
+        <div class="house-map-side">
+          <div class="map-cap">{{ mapCap }}</div>
+          <div id="houseMap" class="map-canvas"></div>
+        </div>
+      </div>
     </div>
 
+    <!-- 新增或修改房源，小区失焦后自动认位置 -->
     <el-dialog :title="formTitle" v-model="formVisible" width="640px">
       <el-form ref="form" :model="form" :rules="rules" label-width="120px">
         <el-form-item label="门店" prop="storeId">
@@ -68,13 +85,14 @@
           </el-select>
         </el-form-item>
         <el-form-item label="城市" prop="city">
-          <el-input v-model="form.city"></el-input>
+          <el-input v-model="form.city" @blur="fillLocation"></el-input>
         </el-form-item>
         <el-form-item label="区域" prop="district">
-          <el-input v-model="form.district"></el-input>
+          <el-input v-model="form.district" @blur="fillLocation"></el-input>
         </el-form-item>
         <el-form-item label="小区名称" prop="communityName">
-          <el-input v-model="form.communityName"></el-input>
+          <el-input v-model="form.communityName" @blur="fillLocation"></el-input>
+          <div class="loc-hint">{{ locHint }}</div>
         </el-form-item>
         <el-form-item label="面积㎡" prop="buildingAreaSqm">
           <el-input v-model="form.buildingAreaSqm"></el-input>
@@ -140,6 +158,7 @@
       </el-form>
     </el-dialog>
 
+    <!-- 详情里展示入库后的文案智能分析结果 -->
     <el-dialog title="房源详情" v-model="detailVisible" width="70%">
       <el-descriptions :column="2" border>
         <el-descriptions-item label="小区">{{ current.communityName }}</el-descriptions-item>
@@ -167,6 +186,9 @@
 </template>
 <script>
 import NavMain from '@/components/NavMain.vue'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+// 房源列表 + 小区地图，保存后请求文案分析
 export default {
   name: 'House',
   components: { NavMain },
@@ -174,8 +196,9 @@ export default {
     return {
       searchForm: { communityName: '', district: '' },
       tableData: [],
+      allHouses: [],
       page: 1,
-      size: 20,
+      size: 10,
       total: 0,
       detailVisible: false,
       formVisible: false,
@@ -186,6 +209,10 @@ export default {
       stores: [],
       brokers: [],
       form: {},
+      locHint: '填写小区后自动识别位置',
+      map: null,
+      layer: null,
+      mapCap: '地图加载中',
       rules: {
         storeId: [{ required: true, message: '请选择门店', trigger: 'change' }],
         city: [{ required: true, message: '请输入城市', trigger: 'blur' }],
@@ -208,12 +235,24 @@ export default {
   created() {
     this.loadStores()
     this.init()
+    this.loadAllHouses()
+  },
+  mounted() {
+    this.initMap()
+  },
+  beforeUnmount() {
+    if (this.map) {
+      this.map.remove()
+      this.map = null
+    }
   },
   methods: {
+    // 取出后端返回的提示文字
     errMsg(err) {
       if (err.response && err.response.data && err.response.data.message) return err.response.data.message
       return '请求失败'
     },
+    // 挂牌价按万元显示
     priceWan(yuan) {
       if (yuan == null || yuan === '') return '--'
       return (Number(yuan) / 10000).toFixed(1)
@@ -231,6 +270,7 @@ export default {
     statusClass(s) {
       return s === 'ON_SALE' ? 'st-on' : 'st-off'
     },
+    // 下拉门店，管理员新增时必选
     loadStores() {
       this.$axios.get('/stores').then((res) => {
         var list = res.data.data || []
@@ -239,6 +279,7 @@ export default {
         this.stores = []
       })
     },
+    // 按门店拉可用经纪人
     loadBrokers(storeId) {
       if (!storeId) {
         this.brokers = []
@@ -255,6 +296,7 @@ export default {
       this.form.brokerId = ''
       this.loadBrokers(val)
     },
+    // 分析接口有时给数组，有时给 JSON 字符串
     asList(v) {
       if (Array.isArray(v)) return v
       if (typeof v === 'string' && v) {
@@ -267,6 +309,242 @@ export default {
       }
       return []
     },
+    // 地图需要全部有坐标的房源，分页拼起来
+    loadPages() {
+      var that = this
+      return this.$axios.get('/houses', { params: { page: 1, size: 100 } }).then(function (res) {
+        var d = res.data.data || {}
+        var records = d.records || []
+        var total = d.total || 0
+        var pages = Math.ceil(total / 100) || 1
+        var reqs = []
+        var i
+        for (i = 2; i <= pages; i++) {
+          reqs.push(that.$axios.get('/houses', { params: { page: i, size: 100 } }))
+        }
+        if (!reqs.length) return records
+        return Promise.all(reqs).then(function (rest) {
+          rest.forEach(function (r) {
+            var more = (r.data.data && r.data.data.records) || []
+            records = records.concat(more)
+          })
+          return records
+        })
+      })
+    },
+    loadAllHouses() {
+      this.loadPages().then((list) => {
+        this.allHouses = list || []
+        this.drawMap()
+      }).catch(() => {})
+    },
+    // 高德路网底图，坐标和库里经纬度一致
+    initMap() {
+      if (this.map) return
+      this.map = L.map('houseMap', {
+        center: [30.27, 120.15],
+        zoom: 11,
+        zoomControl: true
+      })
+      L.tileLayer('https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+        subdomains: ['1', '2', '3', '4'],
+        maxZoom: 18,
+        attribution: '高德地图'
+      }).addTo(this.map)
+      this.layer = L.layerGroup().addTo(this.map)
+      var map = this.map
+      this.$nextTick(function () {
+        map.invalidateSize()
+      })
+      this.drawMap()
+    },
+    mapHouses() {
+      var kw = (this.searchForm.communityName || '').trim()
+      var district = (this.searchForm.district || '').trim()
+      return this.allHouses.filter(function (h) {
+        var lng = Number(h.longitude)
+        var lat = Number(h.latitude)
+        if (!lng || !lat) return false
+        if (kw && String(h.communityName || '').indexOf(kw) === -1) return false
+        if (district && String(h.district || '').indexOf(district) === -1) return false
+        return true
+      })
+    },
+    // 同一小区多套房合成一个点，点数表示套数
+    groupByCommunity(list) {
+      var map = {}
+      list.forEach(function (h) {
+        var key = (h.communityName || '未命名小区') + '|' + (h.district || '')
+        if (!map[key]) {
+          map[key] = {
+            name: h.communityName || '未命名小区',
+            district: h.district || '',
+            lngSum: 0,
+            latSum: 0,
+            houses: []
+          }
+        }
+        map[key].lngSum += Number(h.longitude)
+        map[key].latSum += Number(h.latitude)
+        map[key].houses.push(h)
+      })
+      return Object.keys(map).map(function (k) {
+        var g = map[k]
+        var n = g.houses.length
+        g.lng = g.lngSum / n
+        g.lat = g.latSum / n
+        return g
+      })
+    },
+    pinColor(g) {
+      var on = 0
+      g.houses.forEach(function (h) {
+        if (h.status === 'ON_SALE') on++
+      })
+      return on > 0 ? '#B57920' : '#96A3BF'
+    },
+    // 按当前查询条件重画右侧圆点
+    drawMap() {
+      if (!this.map || !this.layer) return
+      this.layer.clearLayers()
+      var list = this.mapHouses()
+      var groups = this.groupByCommunity(list)
+      this.mapCap = '已标注 ' + groups.length + ' 个小区，共 ' + list.length + ' 套'
+      var that = this
+      groups.forEach(function (g) {
+        var n = g.houses.length
+        var r = n > 4 ? 13 : (n > 1 ? 10 : 8)
+        var marker = L.circleMarker([g.lat, g.lng], {
+          radius: r,
+          color: '#ffffff',
+          weight: 2,
+          fillColor: that.pinColor(g),
+          fillOpacity: 0.92
+        })
+        marker.bindTooltip(g.name + '（' + n + '套）', { direction: 'top', offset: [0, -8] })
+        marker.on('click', function () {
+          that.map.setView([g.lat, g.lng], 15)
+        })
+        that.layer.addLayer(marker)
+      })
+      if (groups.length) {
+        var pts = groups.map(function (g) {
+          return [g.lat, g.lng]
+        })
+        this.map.fitBounds(pts, { padding: [24, 24], maxZoom: 14 })
+      }
+      this.$nextTick(function () {
+        if (that.map) that.map.invalidateSize()
+      })
+    },
+    // 点表格一行，地图飞到该小区
+    onRowClick(row) {
+      var lng = Number(row.longitude)
+      var lat = Number(row.latitude)
+      if (!this.map || !lng || !lat) return
+      this.map.setView([lat, lng], 15)
+    },
+    // 库里已有同名小区就直接复用坐标
+    findKnownLocation(city, district, name) {
+      var hits = this.allHouses.filter(function (h) {
+        if (!h.longitude || !h.latitude) return false
+        if (name && h.communityName !== name) return false
+        if (district && h.district && h.district !== district) return false
+        return true
+      })
+      if (!hits.length) return null
+      var lng = 0
+      var lat = 0
+      hits.forEach(function (h) {
+        lng += Number(h.longitude)
+        lat += Number(h.latitude)
+      })
+      return { lng: lng / hits.length, lat: lat / hits.length, from: '已有小区' }
+    },
+    // 检索不到时落到杭州市区大致中心
+    districtCenter(district) {
+      var table = {
+        西湖: [30.2595, 120.1300],
+        滨江: [30.2086, 120.2117],
+        上城: [30.2425, 120.1693],
+        拱墅: [30.3190, 120.1410],
+        萧山: [30.1847, 120.2640],
+        余杭: [30.2741, 120.0013],
+        临平: [30.4180, 120.2980],
+        钱塘: [30.3200, 120.4800],
+        富阳: [30.0480, 119.9600],
+        临安: [30.2340, 119.7250]
+      }
+      return table[district] || [30.27, 120.15]
+    },
+    // 开放地图是WGS84，底图用国测局坐标，这里做一次转换
+    wgsToGcj(lat, lng) {
+      var a = 6378245.0
+      var ee = 0.00669342162296594323
+      var dLat = this.transformLat(lng - 105.0, lat - 35.0)
+      var dLng = this.transformLng(lng - 105.0, lat - 35.0)
+      var radLat = lat / 180.0 * Math.PI
+      var magic = Math.sin(radLat)
+      magic = 1 - ee * magic * magic
+      var sqrtMagic = Math.sqrt(magic)
+      dLat = (dLat * 180.0) / ((a * (1 - ee)) / (magic * sqrtMagic) * Math.PI)
+      dLng = (dLng * 180.0) / (a / sqrtMagic * Math.cos(radLat) * Math.PI)
+      return { lat: lat + dLat, lng: lng + dLng }
+    },
+    transformLat(x, y) {
+      var ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x))
+      ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0
+      ret += (20.0 * Math.sin(y * Math.PI) + 40.0 * Math.sin(y / 3.0 * Math.PI)) * 2.0 / 3.0
+      ret += (160.0 * Math.sin(y / 12.0 * Math.PI) + 320 * Math.sin(y * Math.PI / 30.0)) * 2.0 / 3.0
+      return ret
+    },
+    transformLng(x, y) {
+      var ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x))
+      ret += (20.0 * Math.sin(6.0 * x * Math.PI) + 20.0 * Math.sin(2.0 * x * Math.PI)) * 2.0 / 3.0
+      ret += (20.0 * Math.sin(x * Math.PI) + 40.0 * Math.sin(x / 3.0 * Math.PI)) * 2.0 / 3.0
+      ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0
+      return ret
+    },
+    applyLoc(lng, lat, from) {
+      this.form.longitude = Number(Number(lng).toFixed(6))
+      this.form.latitude = Number(Number(lat).toFixed(6))
+      this.locHint = '已识别（' + from + '）：' + this.form.longitude + ', ' + this.form.latitude
+    },
+    // 填写小区后自动认位置，保存时一并提交经纬度
+    fillLocation() {
+      var city = (this.form.city || '').trim()
+      var district = (this.form.district || '').trim()
+      var name = (this.form.communityName || '').trim()
+      if (!name) {
+        this.locHint = '填写小区后自动识别位置'
+        return Promise.resolve()
+      }
+      var known = this.findKnownLocation(city, district, name)
+      if (known) {
+        this.applyLoc(known.lng, known.lat, known.from)
+        return Promise.resolve()
+      }
+      this.locHint = '正在识别小区位置…'
+      var q = city + district + name
+      var that = this
+      return fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q), {
+        headers: { 'Accept-Language': 'zh-CN' }
+      }).then(function (res) {
+        return res.json()
+      }).then(function (arr) {
+        if (arr && arr[0]) {
+          var gcj = that.wgsToGcj(Number(arr[0].lat), Number(arr[0].lon))
+          that.applyLoc(gcj.lng, gcj.lat, '地图检索')
+          return
+        }
+        var c = that.districtCenter(district)
+        that.applyLoc(c[1], c[0], district + '区域中心')
+      }).catch(function () {
+        var c = that.districtCenter(district)
+        that.applyLoc(c[1], c[0], district + '区域中心')
+      })
+    },
+    // 分页查房源，并给每行补文案分析标签
     init() {
       var that = this
       this.$axios.get('/houses', {
@@ -289,6 +567,7 @@ export default {
             row.disadvantages = that.asList(a.disadvantages)
           }).catch(() => {})
         })
+        this.drawMap()
       }).catch((err) => {
         this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
       })
@@ -296,6 +575,7 @@ export default {
     search() {
       this.page = 1
       this.init()
+      this.drawMap()
     },
     pageChange(p) {
       this.page = p
@@ -325,8 +605,11 @@ export default {
         communityIntro: '',
         surrounding: '',
         storeId: defaultStore,
-        brokerId: this.isAdmin ? '' : this.$store.state.brokerId
+        brokerId: this.isAdmin ? '' : this.$store.state.brokerId,
+        longitude: null,
+        latitude: null
       }
+      this.locHint = '填写小区后自动识别位置'
       this.loadBrokers(defaultStore)
       this.formVisible = true
     },
@@ -343,6 +626,12 @@ export default {
           }
         }
         if (!this.form.orientation) this.form.orientation = ['S']
+        if (this.form.longitude && this.form.latitude) {
+          this.locHint = '已识别位置：' + this.form.longitude + ', ' + this.form.latitude
+        } else {
+          this.locHint = '填写小区后自动识别位置'
+          this.fillLocation()
+        }
         this.loadBrokers(this.form.storeId)
         this.formVisible = true
       }).catch((err) => {
@@ -372,6 +661,8 @@ export default {
         surrounding: f.surrounding,
         storeId: f.storeId ? Number(f.storeId) : null,
         brokerId: f.brokerId ? Number(f.brokerId) : null,
+        longitude: f.longitude ? Number(f.longitude) : null,
+        latitude: f.latitude ? Number(f.latitude) : null,
         version: f.version
       }
     },
@@ -381,28 +672,34 @@ export default {
           this.$alert('表单验证失败', { confirmButtonText: '确定' })
           return false
         }
-        var req = this.isEdit
-          ? this.$axios.put('/houses/' + this.form.id, this.bodyOfForm())
-          : this.$axios.post('/houses', this.bodyOfForm())
-        req.then((res) => {
-          if (res.data.code !== 0) {
-            this.$alert(res.data.message, { confirmButtonText: '确定' })
-            return
-          }
-          var id = (res.data.data && res.data.data.id) || this.form.id
-          this.$alert(this.isEdit ? '修改成功' : '添加成功', { confirmButtonText: '确定' })
-          this.formVisible = false
-          // 保存后立刻跑文案分析，列表标签才能跟上
-          this.$axios.post('/ai/houses/' + id + '/text-analysis').then(() => {
-            this.init()
-          }).catch(() => {
-            this.init()
+        var that = this
+        this.fillLocation().then(function () {
+          var req = that.isEdit
+            ? that.$axios.put('/houses/' + that.form.id, that.bodyOfForm())
+            : that.$axios.post('/houses', that.bodyOfForm())
+          req.then((res) => {
+            if (res.data.code !== 0) {
+              that.$alert(res.data.message, { confirmButtonText: '确定' })
+              return
+            }
+            var id = (res.data.data && res.data.data.id) || that.form.id
+            that.$alert(that.isEdit ? '修改成功' : '添加成功', { confirmButtonText: '确定' })
+            that.formVisible = false
+            // 保存后立刻跑文案分析，列表标签才能跟上
+            that.$axios.post('/ai/houses/' + id + '/text-analysis').then(() => {
+              that.init()
+              that.loadAllHouses()
+            }).catch(() => {
+              that.init()
+              that.loadAllHouses()
+            })
+          }).catch((err) => {
+            that.$alert(that.errMsg(err), { confirmButtonText: '确定' })
           })
-        }).catch((err) => {
-          this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
         })
       })
     },
+    // 详情里读已保存的文案分析结果
     openDetail(row) {
       this.$axios.get('/houses/' + row.id).then((res) => {
         this.current = res.data.data || {}
@@ -417,6 +714,7 @@ export default {
         this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
       })
     },
+    // 手动重试文案分析
     retryAi() {
       this.$axios.post('/ai/houses/' + this.current.id + '/text-analysis').then((res) => {
         var a = res.data.data || {}
@@ -429,9 +727,11 @@ export default {
         this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
       })
     },
+    // 跳转到价格建议页
     goPrice(row) {
       this.$router.push('/price-advice/' + row.id)
     },
+    // 管理员核验通过后才能上架
     verify(row) {
       this.$axios.get('/houses/' + row.id).then((res) => {
         var d = res.data.data || row
@@ -443,6 +743,7 @@ export default {
       }).then(() => {
         this.$alert('核验通过', { confirmButtonText: '确定' })
         this.init()
+        this.loadAllHouses()
       }).catch((err) => {
         this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
       })
@@ -463,6 +764,7 @@ export default {
         }).then(() => {
           this.$alert('操作成功', { confirmButtonText: '确定' })
           this.init()
+          this.loadAllHouses()
         }).catch((err) => {
           this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
         })
@@ -479,15 +781,73 @@ export default {
       }).then(() => {
         this.$alert('已上架', { confirmButtonText: '确定' })
         this.init()
+        this.loadAllHouses()
       }).catch((err) => {
         this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
       })
+    },
+    // 打开整页地图
+    goMap() {
+      this.$router.push('/house-map')
     }
   }
 }
 </script>
 <style scoped>
 p { text-align: left; }
-.house-name { text-align: left; color: #2b2b2b; font-weight: 600; }
-.house-sub { text-align: left; color: #96a3bf; font-size: 12px; margin: 4px 0; }
+.house-name { text-align: center; color: #2b2b2b; font-weight: 600; }
+.house-sub { text-align: center; color: #96a3bf; font-size: 12px; margin: 4px 0; }
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px;
+}
+.ops {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+.house-page {
+  display: flex;
+  justify-content: center;
+}
+.house-list :deep(.el-table th.el-table__cell) {
+  text-align: center;
+}
+.house-list :deep(.el-table .cell) {
+  text-align: center;
+}
+.house-split {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+.house-list {
+  flex: 1;
+  min-width: 0;
+}
+.house-map-side {
+  width: 42%;
+  min-width: 360px;
+  display: flex;
+  flex-direction: column;
+}
+.map-cap {
+  font-size: 12px;
+  color: #96a3bf;
+  margin-bottom: 6px;
+}
+.map-canvas {
+  flex: 1;
+  min-height: 520px;
+  border: 1px solid #c6c6c7;
+  border-radius: 4px;
+}
+.loc-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #96a3bf;
+}
 </style>

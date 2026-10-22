@@ -5,6 +5,7 @@
       <h2>客户管理</h2>
     </div>
     <div class="box1">
+      <!-- 客户列表：查询、新增、修改、删除 -->
       <el-form :inline="true" :model="searchForm">
         <el-form-item label="关键字">
           <el-input v-model="searchForm.keyword"></el-input>
@@ -58,6 +59,7 @@
 </template>
 <script>
 import NavMain from '@/components/NavMain.vue'
+// 客源资料，管理员要选门店
 export default {
   name: 'Customer',
   components: { NavMain },
@@ -102,6 +104,7 @@ export default {
       if (err.response && err.response.data && err.response.data.message) return err.response.data.message
       return '请求失败'
     },
+    // 按关键字分页查客户
     init() {
       this.$axios.get('/customers', {
         params: { keyword: this.searchForm.keyword || undefined, page: this.page, size: this.size }
@@ -139,6 +142,7 @@ export default {
         this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
       })
     },
+    // 有 id 就修改，没有就新增
     saveForm() {
       this.$refs['form'].validate((valid) => {
         if (!valid) {

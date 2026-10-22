@@ -58,7 +58,7 @@ export default {
     onSubmit() {
       this.$refs['form'].validate((valid) => {
         if (valid) {
-          // 后端接好后改为 this.$axios.post('/addHouse', this.form)
+          // 校验通过后提示并回到房源列表
           this.$alert('添加成功（目前为页面效果，未写入数据库）', { confirmButtonText: '确定' })
           this.$router.push('/house')
         } else {

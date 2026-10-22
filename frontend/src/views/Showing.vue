@@ -5,6 +5,7 @@
       <h2>带看管理</h2>
     </div>
     <div class="box1">
+      <!-- 按客户、小区关键字和状态查询 -->
       <el-form :inline="true" :model="searchForm">
         <el-form-item label="关键字">
           <el-input v-model="searchForm.keyword" placeholder="客户或小区"></el-input>
@@ -56,6 +57,7 @@
       </el-pagination>
     </div>
 
+    <!-- 新增要选房源客户经纪人；修改只能改期 -->
     <el-dialog :title="formTitle" v-model="formVisible" width="520px">
       <el-form ref="form" :model="form" :rules="rules" label-width="110px">
         <el-form-item label="房源" prop="houseId" v-if="!isEdit">
@@ -101,6 +103,7 @@
 </template>
 <script>
 import NavMain from '@/components/NavMain.vue'
+// 带看预约：查询、详情、新增、改期、完成、取消
 export default {
   name: 'Showing',
   components: { NavMain },
@@ -160,6 +163,7 @@ export default {
       if (err.response && err.response.data && err.response.data.message) return err.response.data.message
       return '请求失败'
     },
+    // 后端英文状态改成中文
     showStatus(s) {
       if (s === 'SCHEDULED') return '待看'
       if (s === 'COMPLETED') return '已完成'
@@ -176,6 +180,7 @@ export default {
       var n = Date.parse(t)
       return isNaN(n) ? 0 : n
     },
+    // 列表上的房源写成 编号+小区+区域+面积
     houseLabel(h) {
       if (!h) return ''
       var bits = ['#' + h.id]
@@ -184,6 +189,7 @@ export default {
       if (h.buildingAreaSqm) bits.push(h.buildingAreaSqm + '㎡')
       return bits.join('　')
     },
+    // 客户和经纪人要跟所选房源同一门店
     currentHouseStore() {
       var id = this.form && this.form.houseId
       if (!id) return ''
@@ -196,6 +202,7 @@ export default {
       this.form.customerId = ''
       this.form.brokerId = ''
     },
+    // 接口按页返回，这里把各页拼成完整列表
     loadPages(url) {
       var that = this
       return this.$axios.get(url, { params: { page: 1, size: 100 } }).then(function (res) {
@@ -222,6 +229,7 @@ export default {
       var start = (this.page - 1) * this.size
       this.tableData = this.filteredRows.slice(start, start + this.size)
     },
+    // 前台按关键字和状态过滤后再分页
     applyFilter() {
       var kw = (this.searchForm.keyword || '').trim()
       var st = this.searchForm.status || ''
@@ -234,6 +242,7 @@ export default {
       this.total = this.filteredRows.length
       this.applyPage()
     },
+    // 同时拉带看、房源、客户，用来显示姓名和小区
     init() {
       var that = this
       Promise.all([
@@ -292,6 +301,7 @@ export default {
       }
       this.formVisible = true
     },
+    // 改期要带 version，避免两人同时改冲突
     openEdit(row) {
       this.isEdit = true
       this.formTitle = '修改带看'
@@ -318,6 +328,7 @@ export default {
         this.detailVisible = true
       })
     },
+    // 新增走 POST，改期走 PUT
     saveForm() {
       this.$refs['form'].validate((valid) => {
         if (!valid) {
@@ -349,6 +360,7 @@ export default {
         })
       })
     },
+    // 把待看改成已完成
     complete(row) {
       this.$axios.get('/showings/' + row.id).then((res) => {
         var d = res.data.data || row
@@ -366,6 +378,7 @@ export default {
         this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
       })
     },
+    // 调用取消接口，状态改为已取消
     del(row) {
       this.$confirm('确定删除该带看吗？删除后状态会变为已取消。', '提示', {
         confirmButtonText: '确定',

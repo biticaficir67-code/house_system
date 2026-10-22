@@ -20,11 +20,12 @@
   </div>
 </template>
 <script>
+// 各业务页顶部菜单，管理员才显示权限页
 export default {
   name: 'NavMain',
   data() {
     return {
-      activeIndex: this.$route.path
+      activeIndex: this.menuIndex(this.$route.path)
     }
   },
   computed: {
@@ -34,10 +35,15 @@ export default {
   },
   watch: {
     $route(to) {
-      this.activeIndex = to.path
+      this.activeIndex = this.menuIndex(to.path)
     }
   },
   methods: {
+    // 地图页时菜单选中房源管理
+    menuIndex(path) {
+      if (path === '/house-map') return '/house'
+      return path
+    },
     quit() {
       this.$axios.post('/auth/logout').catch(function () {})
       this.$store.commit('logout')

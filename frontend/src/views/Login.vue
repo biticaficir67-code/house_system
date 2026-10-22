@@ -50,6 +50,7 @@
   </div>
 </template>
 <script>
+// 登录拿 token，经纪人可以在本页提交注册
 export default {
   name: 'Login',
   data() {
@@ -87,6 +88,7 @@ export default {
       }
       return '请求失败'
     },
+    // 调 /auth/login，成功后把角色和 token 放进 Vuex
     login(loginForm) {
       this.$refs['loginForm'].validate((valid) => {
         if (!valid) {
@@ -134,6 +136,7 @@ export default {
     goReg() {
       this.regVisible = true
     },
+    // 提交经纪人注册申请
     register() {
       this.$refs['regForm'].validate((valid) => {
         if (!valid) {

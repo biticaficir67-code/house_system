@@ -1,5 +1,6 @@
 import { createStore } from 'vuex'
 
+// Vuex 只放登录态，刷新后从 sessionStorage 还原
 export default createStore({
   state: {
     isLogin: window.sessionStorage.getItem('user') == null ? '0' : window.sessionStorage.getItem('user'),
@@ -10,6 +11,7 @@ export default createStore({
     storeId: window.sessionStorage.getItem('storeId') || ''
   },
   mutations: {
+    // 登录成功写入账号、角色和 token
     changeLogin(state, data) {
       state.isLogin = data.uname
       state.role = data.role
@@ -23,6 +25,7 @@ export default createStore({
       window.sessionStorage.setItem('brokerId', state.brokerId)
       window.sessionStorage.setItem('storeId', state.storeId)
     },
+    // 退出时清掉本地登录信息
     logout(state) {
       state.isLogin = '0'
       state.role = 'BROKER'

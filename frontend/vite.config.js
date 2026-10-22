@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url'
 
 const dir = path.dirname(fileURLToPath(import.meta.url))
 
-// 后端好了以后，把 target 改成 Java 真实地址
+// 开发时把 /api 转到本机 8080
 export default defineConfig({
   plugins: [vue()],
   resolve: {

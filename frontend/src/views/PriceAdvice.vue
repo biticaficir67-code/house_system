@@ -9,6 +9,7 @@
 </template>
 <script>
 import NavMain from '@/components/NavMain.vue'
+// 价格建议页，可返回房源管理
 export default {
   name: 'PriceAdvice',
   components: { NavMain },

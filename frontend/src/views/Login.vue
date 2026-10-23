@@ -133,6 +133,7 @@ export default {
         })
       })
     },
+    // 打开经纪人注册窗口
     goReg() {
       this.regVisible = true
     },
@@ -161,6 +162,7 @@ export default {
         })
       })
     },
+    // 清空登录表单
     cancel() {
       this.$refs['loginForm'].resetFields()
     }

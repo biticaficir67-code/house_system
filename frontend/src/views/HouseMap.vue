@@ -100,6 +100,7 @@ export default {
         })
       })
     },
+    // 拉齐全部房源后再画点
     loadHouses() {
       this.loadPages('/houses').then((list) => {
         this.allHouses = list || []
@@ -128,6 +129,7 @@ export default {
       })
       this.drawMap()
     },
+    // 去掉没有坐标的，再按区域和状态筛
     filteredHouses() {
       var district = this.searchForm.district
       var status = this.searchForm.status
@@ -166,6 +168,7 @@ export default {
         return g
       })
     },
+    // 有在售的小区用主色
     pinColor(g) {
       var on = 0
       g.houses.forEach(function (h) {

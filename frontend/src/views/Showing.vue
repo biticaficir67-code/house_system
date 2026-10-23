@@ -167,11 +167,13 @@ export default {
     }
   },
   computed: {
+    // 新增带看只能选在售房源
     saleHouses() {
       return this.houseList.filter(function (h) {
         return h.status === 'ON_SALE'
       })
     },
+    // 客户下拉跟房源门店对齐
     activeCustomers() {
       var storeId = this.currentHouseStore()
       return this.customerList.filter(function (c) {
@@ -180,6 +182,7 @@ export default {
         return true
       })
     },
+    // 经纪人下拉跟房源门店对齐
     formBrokers() {
       var storeId = this.currentHouseStore()
       return this.brokerList.filter(function (b) {
@@ -203,11 +206,13 @@ export default {
       if (s === 'CANCELLED') return '已取消'
       return s || '--'
     },
+    // 预约时间去掉 T，只显示到分钟
     timeText(row) {
       var t = (row && (row.appointmentTime || row.showTime || row.completedTime)) || ''
       if (!t) return '--'
       return String(t).replace('T', ' ').substring(0, 16)
     },
+    // 用来按时间从近到远排序
     timeVal(row) {
       var t = row.appointmentTime || row.showTime || row.completedTime || ''
       var n = Date.parse(t)
@@ -231,6 +236,7 @@ export default {
       })[0]
       return hit ? hit.storeId : ''
     },
+    // 换房源后门店变了，客户和经纪人重选
     onHouseChange() {
       this.form.customerId = ''
       this.form.brokerId = ''
@@ -258,6 +264,7 @@ export default {
         })
       })
     },
+    // 当前页切一段出来给表格
     applyPage() {
       var start = (this.page - 1) * this.size
       this.tableData = this.filteredRows.slice(start, start + this.size)
@@ -318,10 +325,12 @@ export default {
       this.page = 1
       this.applyFilter()
     },
+    // 翻页只切本地已经拼好的列表
     pageChange(p) {
       this.page = p
       this.applyPage()
     },
+    // 新增带看要选房源、客户、经纪人
     openAdd() {
       this.isEdit = false
       this.formTitle = '新增带看'
@@ -351,6 +360,7 @@ export default {
         this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
       })
     },
+    // 详情再拉一次，带上取消原因和回访
     openDetail(row) {
       this.$axios.get('/showings/' + row.id).then((res) => {
         var d = res.data.data || {}

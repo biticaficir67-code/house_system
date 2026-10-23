@@ -42,6 +42,7 @@ const routes = [
     component: House
   },
   {
+    // 整页小区地图，从房源管理进入
     path: '/house-map',
     component: HouseMap
   },

@@ -150,6 +150,7 @@ def join_house_text(core_selling, community, surrounding):
 
 
 def is_noise_word(w):
+    # 停用词、纯数字、楼盘名尾巴都不进关键词
     if w in STOP_WORDS or w.isdigit() or len(w) < 2:
         return True
     for s in NOISE_SUFFIX:
@@ -184,6 +185,7 @@ def selling_lexicon():
 
 
 def is_selling_word(w):
+    # 只保留能对上卖点标签或说明卖点的词
     if is_noise_word(w) or w in WEAK_KEYS:
         return False
     lex = selling_lexicon()
@@ -196,6 +198,7 @@ def is_selling_word(w):
 
 
 def filter_selling_items(items):
+    # 去掉重复和没有卖点意义的词
     seen = set()
     data = []
     for item in items:
@@ -208,6 +211,7 @@ def filter_selling_items(items):
 
 
 def cut_words(text):
+    # jieba 切词后丢掉噪声
     result = []
     for w in jieba.lcut(text or ""):
         w = w.strip()
@@ -223,6 +227,7 @@ def to_doc(text):
 
 
 def match_tags(text, rule_list):
+    # 文案里出现标签关键词就算命中
     hit = []
     for item in rule_list:
         for key in item["keys"]:
@@ -257,6 +262,7 @@ def has_mall_signal(core, community, surrounding):
 
 
 def insert_tag(tags, name, before="商业配套"):
+    # 近商圈插到商业配套前面，避免两个标签挤在一起不好看
     if name in tags:
         return tags
     if before in tags:
@@ -344,6 +350,7 @@ def infer_topic(text):
 
 
 def tags_from_fields(core, community, surrounding):
+    # 三段文案对上展示标签，出门就是广场再补近商圈
     text = join_house_text(core, community, surrounding)
     tags = match_tags(text, TAG_LIST)
     if has_mall_signal(core, community, surrounding):
@@ -352,6 +359,7 @@ def tags_from_fields(core, community, surrounding):
 
 
 def make_summary(advantages, disadvantages):
+    # 详情页用的一两句归纳
     if not advantages and not disadvantages:
         return "文案信息较少，暂无法归纳明显卖点。"
     bits = []

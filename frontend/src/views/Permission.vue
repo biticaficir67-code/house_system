@@ -86,6 +86,7 @@ export default {
       if (err.response && err.response.data && err.response.data.message) return err.response.data.message
       return '请求失败'
     },
+    // 门店编号换成门店名称
     storeText(storeId) {
       var i
       for (i = 0; i < this.stores.length; i++) {
@@ -93,16 +94,19 @@ export default {
       }
       return storeId || '--'
     },
+    // 角色列表里取出管理员或经纪人
     roleText(row) {
       var roles = row.roles || []
       if (!roles.length) return '--'
       return roles[0].code === 'ADMIN' ? '管理员' : '经纪人'
     },
+    // 未开通档案按编号生成登录名，如 bk03
     loginName(broker) {
       var n = String(broker.id)
       if (n.length < 2) n = '0' + n
       return 'bk' + n
     },
+    // 同时拉门店、角色、登录账号和未开通档案
     init() {
       var that = this
       this.$axios.get('/stores').then(function (res) {

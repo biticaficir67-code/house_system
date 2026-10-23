@@ -257,11 +257,13 @@ export default {
       if (yuan == null || yuan === '') return '--'
       return (Number(yuan) / 10000).toFixed(1)
     },
+    // 列表上写成几室几厅
     roomText(row) {
       var r = row.rooms != null ? row.rooms : '-'
       var h = row.halls != null ? row.halls : '-'
       return r + '室' + h + '厅'
     },
+    // 状态码换成中文
     statusText(s) {
       if (s === 'ON_SALE') return '在售'
       if (s === 'DEAL') return '成交'
@@ -292,6 +294,7 @@ export default {
         this.brokers = []
       })
     },
+    // 换门店后经纪人要重选
     onStoreChange(val) {
       this.form.brokerId = ''
       this.loadBrokers(val)
@@ -332,6 +335,7 @@ export default {
         })
       })
     },
+    // 右侧地图用全量房源，不跟表格分页走
     loadAllHouses() {
       this.loadPages().then((list) => {
         this.allHouses = list || []
@@ -358,6 +362,7 @@ export default {
       })
       this.drawMap()
     },
+    // 地图点位跟着查询条件走
     mapHouses() {
       var kw = (this.searchForm.communityName || '').trim()
       var district = (this.searchForm.district || '').trim()
@@ -396,6 +401,7 @@ export default {
         return g
       })
     },
+    // 有在售房的小区用主色，其余用灰色
     pinColor(g) {
       var on = 0
       g.houses.forEach(function (h) {
@@ -505,6 +511,7 @@ export default {
       ret += (150.0 * Math.sin(x / 12.0 * Math.PI) + 300.0 * Math.sin(x / 30.0 * Math.PI)) * 2.0 / 3.0
       return ret
     },
+    // 把识别到的经纬度写进表单
     applyLoc(lng, lat, from) {
       this.form.longitude = Number(Number(lng).toFixed(6))
       this.form.latitude = Number(Number(lat).toFixed(6))
@@ -572,6 +579,7 @@ export default {
         this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
       })
     },
+    // 查询从第一页开始，地图同步刷新
     search() {
       this.page = 1
       this.init()
@@ -581,6 +589,7 @@ export default {
       this.page = p
       this.init()
     },
+    // 新增默认杭州，经纪人账号带上门店
     openAdd() {
       this.isEdit = false
       this.formTitle = '新增房源'
@@ -613,6 +622,7 @@ export default {
       this.loadBrokers(defaultStore)
       this.formVisible = true
     },
+    // 修改时带回原记录，没有坐标再认一次位置
     openEdit(row) {
       this.isEdit = true
       this.formTitle = '修改房源'
@@ -638,6 +648,7 @@ export default {
         this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
       })
     },
+    // 表单字段整理成后端要的数字和经纬度
     bodyOfForm() {
       var f = this.form
       return {
@@ -666,6 +677,7 @@ export default {
         version: f.version
       }
     },
+    // 先认位置再提交，成功后跑文案分析
     saveForm() {
       this.$refs['form'].validate((valid) => {
         if (!valid) {
@@ -748,6 +760,7 @@ export default {
         this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
       })
     },
+    // 在售改为下架
     off(row) {
       this.$confirm('确定下架该房源吗？', '提示', {
         confirmButtonText: '确定',
@@ -770,6 +783,7 @@ export default {
         })
       }).catch(() => {})
     },
+    // 下架房源重新上架
     onSale(row) {
       this.$axios.get('/houses/' + row.id).then((res) => {
         var d = res.data.data || row

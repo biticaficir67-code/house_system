@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-文案识别服务的对外入口，放在ai_service的test_analyze子目录。
+文案识别服务的对外入口，放在 ai_service/text_analyze。
 
 启动（先进入 text_analyze 目录）：
     python app.py
@@ -38,6 +38,7 @@ def read_body():
 @app.route("/ai/analyze", methods=["POST", "OPTIONS"])
 @app.route("/ai/extract-tags", methods=["POST", "OPTIONS"])
 def analyze():
+    # 预检请求直接放行，正文再拼卖点、小区、配套
     if request.method == "OPTIONS":
         return jsonify({"code": 0})
     data = read_body()

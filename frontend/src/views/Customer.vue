@@ -92,6 +92,7 @@ export default {
     this.init()
   },
   methods: {
+    // 新增时下拉门店
     loadStores() {
       this.$axios.get('/stores').then((res) => {
         var list = res.data.data || []
@@ -124,6 +125,7 @@ export default {
       this.page = p
       this.init()
     },
+    // 经纪人账号默认当前门店
     openAdd() {
       this.isEdit = false
       this.formTitle = '新增客户'
@@ -168,6 +170,7 @@ export default {
         })
       })
     },
+    // 删除前先确认
     del(row) {
       this.$confirm('确定删除吗？', '提示', {
         confirmButtonText: '确定',

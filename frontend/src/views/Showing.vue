@@ -38,12 +38,13 @@
             <span :class="scope.row.status === 'SCHEDULED' ? 'st-wait' : (scope.row.status === 'COMPLETED' ? 'st-ok' : 'st-off')">{{ showStatus(scope.row.status) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280">
+        <el-table-column label="操作" width="340">
           <template #default="scope">
             <el-button size="small" type="primary" @click="openDetail(scope.row)">详情</el-button>
-            <el-button size="small" type="warning" v-if="scope.row.status === 'SCHEDULED'" @click="openEdit(scope.row)">修改</el-button>
+            <el-button size="small" type="warning" v-if="scope.row.status === 'SCHEDULED'" @click="openEdit(scope.row)">改期</el-button>
             <el-button size="small" type="success" v-if="scope.row.status === 'SCHEDULED'" @click="complete(scope.row)">完成</el-button>
-            <el-button size="small" type="info" v-if="scope.row.status === 'SCHEDULED'" @click="del(scope.row)">删除</el-button>
+            <el-button size="small" type="info" v-if="scope.row.status === 'SCHEDULED'" @click="cancelShow(scope.row)">取消</el-button>
+            <el-button size="small" type="warning" v-if="scope.row.status === 'COMPLETED'" @click="openFeedback(scope.row)">回访</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -97,7 +98,32 @@
         <el-descriptions-item label="状态">{{ showStatus(current.status) }}</el-descriptions-item>
         <el-descriptions-item label="备注">{{ current.remark || '--' }}</el-descriptions-item>
         <el-descriptions-item label="取消原因" v-if="current.cancelReason">{{ current.cancelReason }}</el-descriptions-item>
+        <el-descriptions-item label="客户意向" v-if="current.intention">{{ current.intention }}</el-descriptions-item>
+        <el-descriptions-item label="回访内容" v-if="current.feedback">{{ current.feedback }}</el-descriptions-item>
       </el-descriptions>
+    </el-dialog>
+
+    <el-dialog title="带看回访" v-model="feedbackVisible" width="480px">
+      <el-form ref="feedbackForm" :model="feedbackForm" :rules="feedbackRules" label-width="110px">
+        <el-form-item label="客户意向" prop="intention">
+          <el-select v-model="feedbackForm.intention" placeholder="请选择" style="width:100%">
+            <el-option label="高" value="HIGH"></el-option>
+            <el-option label="中" value="MEDIUM"></el-option>
+            <el-option label="低" value="LOW"></el-option>
+            <el-option label="暂不确定" value="UNKNOWN"></el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="回访内容" prop="content">
+          <el-input type="textarea" v-model="feedbackForm.content" rows="3"></el-input>
+        </el-form-item>
+        <el-form-item label="下次联系" prop="nextContactAt">
+          <el-input v-model="feedbackForm.nextContactAt" placeholder="2026-11-01T10:00:00"></el-input>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="saveFeedback">确定</el-button>
+          <el-button @click="feedbackVisible = false">取消</el-button>
+        </el-form-item>
+      </el-form>
     </el-dialog>
   </div>
 </template>
@@ -121,15 +147,22 @@ export default {
       searchForm: { keyword: '', status: '' },
       formVisible: false,
       detailVisible: false,
+      feedbackVisible: false,
       isEdit: false,
       formTitle: '新增带看',
       form: {},
       current: {},
+      feedbackForm: {},
       rules: {
         houseId: [{ required: true, message: '请选择房源', trigger: 'change' }],
         customerId: [{ required: true, message: '请选择客户', trigger: 'change' }],
         brokerId: [{ required: true, message: '请选择经纪人', trigger: 'change' }],
         appointmentTime: [{ required: true, message: '请输入预约时间', trigger: 'blur' }]
+      },
+      feedbackRules: {
+        intention: [{ required: true, message: '请选择客户意向', trigger: 'change' }],
+        content: [{ required: true, message: '请填写回访内容', trigger: 'blur' }],
+        nextContactAt: [{ required: true, message: '请填写下次联系时间', trigger: 'blur' }]
       }
     }
   },
@@ -378,26 +411,69 @@ export default {
         this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
       })
     },
-    // 调用取消接口，状态改为已取消
-    del(row) {
-      this.$confirm('确定删除该带看吗？删除后状态会变为已取消。', '提示', {
+    // 待看记录改为已取消
+    cancelShow(row) {
+      var that = this
+      this.$prompt('请填写取消原因', '取消带看', {
         confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }).then(() => {
-        return this.$axios.get('/showings/' + row.id)
-      }).then((res) => {
-        var d = res.data.data || row
-        return this.$axios.put('/showings/' + row.id + '/cancel', {
-          reason: '删除预约',
-          version: d.version
+        cancelButtonText: '返回',
+        inputPattern: /\S+/,
+        inputErrorMessage: '取消原因不能为空'
+      }).then(function (r) {
+        return that.$axios.get('/showings/' + row.id).then(function (res) {
+          var d = res.data.data || row
+          return that.$axios.put('/showings/' + row.id + '/cancel', {
+            reason: r.value,
+            version: d.version
+          })
         })
-      }).then(() => {
-        this.$alert('已取消该带看', { confirmButtonText: '确定' })
-        this.init()
-      }).catch((err) => {
+      }).then(function () {
+        that.$alert('已取消该带看', { confirmButtonText: '确定' })
+        that.init()
+      }).catch(function (err) {
         if (err === 'cancel' || err === 'close') return
-        this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
+        that.$alert(that.errMsg(err), { confirmButtonText: '确定' })
+      })
+    },
+    // 已完成带看补一条客户回访
+    openFeedback(row) {
+      var that = this
+      this.$axios.get('/showings/' + row.id).then(function (res) {
+        var d = res.data.data || row
+        var n = new Date()
+        n.setDate(n.getDate() + 3)
+        var t = n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0') + 'T10:00:00'
+        that.feedbackForm = {
+          id: d.id,
+          version: d.version,
+          intention: 'MEDIUM',
+          content: '',
+          nextContactAt: t
+        }
+        that.feedbackVisible = true
+      }).catch(function (err) {
+        that.$alert(that.errMsg(err), { confirmButtonText: '确定' })
+      })
+    },
+    saveFeedback() {
+      var that = this
+      this.$refs['feedbackForm'].validate(function (valid) {
+        if (!valid) {
+          that.$alert('表单验证失败', { confirmButtonText: '确定' })
+          return false
+        }
+        that.$axios.post('/showings/' + that.feedbackForm.id + '/follow-ups', {
+          content: that.feedbackForm.content,
+          intention: that.feedbackForm.intention,
+          nextContactAt: that.feedbackForm.nextContactAt,
+          version: that.feedbackForm.version
+        }).then(function () {
+          that.$alert('回访已保存', { confirmButtonText: '确定' })
+          that.feedbackVisible = false
+          that.init()
+        }).catch(function (err) {
+          that.$alert(that.errMsg(err), { confirmButtonText: '确定' })
+        })
       })
     }
   }

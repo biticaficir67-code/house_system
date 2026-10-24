@@ -1,5 +1,7 @@
 # 队员报表合并说明
 
+> 2026-10-24 实际联调补充：实际导入已确认：队员latest.sql第932行把auth_session等补充DDL拼成一行注释，常规导入不会创建会话表。导入后手动执行 `src/main/resources/db/migration/direct_account_sessions.sql` 补齐auth_session；该脚本只做CREATE TABLE IF NOT EXISTS，不读取sys_user、不删除数据。历史V001～V003仍不可执行。本轮已仅在新建独立库执行此补充脚本。
+
 已合并队员的报表查询接口与 `database/house_system与后端统一+初始数据录入版.sql`。原 SQL 文件保留，不在合并时执行。
 
 ## 报表兼容

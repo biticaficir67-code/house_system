@@ -4,7 +4,7 @@
 
 ## 准备
 
-- [ ] 使用隔离的 MySQL 8 开发库；当前基线为 house_system_latest.sql，不额外执行历史 V001～V003。已有数据先备份，不能直接覆盖；历史库另行核对升级路径。
+- [ ] 使用隔离的 MySQL 8 开发库；当前基线为 house_system_latest.sql，导入后检查并执行 direct_account_sessions.sql 补齐会话表，不执行历史 V001～V003。已有数据先备份，不能直接覆盖；历史库另行核对升级路径。
 - [ ] 核对 sys_admin 的管理员、broker 的本店与跨店经纪人，核对原表审核与启停字段；已有 latest 初始账号无需 bootstrap，账号清单见 TEAM_LOGIN.md。
 - [ ] 前端使用 /api；正常业务用 Authorization: Bearer，申请阶段仅用 X-Application-Token。
 

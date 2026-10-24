@@ -1,5 +1,7 @@
 # 二手房业务管理系统后端
 
+> 2026-10-24 实际联调补充：实际导入已确认：队员latest.sql第932行把auth_session等补充DDL拼成一行注释，常规导入不会创建会话表。导入后手动执行 `src/main/resources/db/migration/direct_account_sessions.sql` 补齐auth_session；该脚本只做CREATE TABLE IF NOT EXISTS，不读取sys_user、不删除数据。历史V001～V003仍不可执行。本轮已仅在新建独立库执行此补充脚本。
+
 Spring Boot 3.5、Java 17、Spring Security、MyBatis、MySQL 8.0+。所有 Java 文件保持在 `src/main/java/system`，业务模块内直接放 Controller/Service/Models，不增加 entity/dto/impl 等层级目录。
 
 ## 当前组内进度
@@ -49,7 +51,7 @@ Spring Boot 3.5、Java 17、Spring Security、MyBatis、MySQL 8.0+。所有 Java
 
 当前协作基线是 `../database/house_system_latest.sql`，使用 MySQL 8.0+。它是会清空重建 house_system 的完整演示包，仅用于已确认可以覆盖的开发环境；已有要保留的数据时先备份并核对方案。后端不会自动导入或重建数据库。
 
-已导入 latest 的库直接配置并启动；管理员使用 sys_admin、经纪人使用 broker，初始化、注册、审核与账号维护通过已有 ADMIN 角色行锁串行处理，不依赖 sys_bootstrap 或 sys_user。
+已导入 latest 的库检查并补齐 auth_session 后配置启动；管理员使用 sys_admin、经纪人使用 broker，初始化、注册、审核与账号维护通过已有 ADMIN 角色行锁串行处理，不依赖 sys_bootstrap 或 sys_user。
 
 历史数据库底稿与 backend 中 V001～V003 仅供查阅旧实现，不用于当前账号体系。旧版 auth_session 带 sys_user 外键，不能直接用于本版；字段与边界见 [TEAM_LOGIN.md](TEAM_LOGIN.md)。
 
@@ -102,4 +104,4 @@ mvn spring-boot:run
 
 ## 本轮检查
 
-本轮仅编译打包，跳过全部测试；未连接实际MySQL、导入数据库或启动服务联调。现有测试夹具仍基于旧账号表，尚未适配本次原表账号方案。后续业务验收见 INTEGRATION_CHECKLIST.md。
+原表改造阶段只编译打包；后续已按本人要求执行独立MySQL8.4联调、页面检查及现有自动测试。现有后端测试夹具仍基于旧账号表，初始化缺少sys_admin而失败，不能当作业务回归通过；实测结果与待修问题见 [ENVIRONMENT_REVIEW.md](ENVIRONMENT_REVIEW.md)。

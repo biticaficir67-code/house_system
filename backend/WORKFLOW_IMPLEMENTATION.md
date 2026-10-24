@@ -1,5 +1,7 @@
 # 表格第二、三步的后端实现说明
 
+> 2026-10-24 实际联调补充：实际导入已确认：队员latest.sql第932行把auth_session等补充DDL拼成一行注释，常规导入不会创建会话表。导入后手动执行 `src/main/resources/db/migration/direct_account_sessions.sql` 补齐auth_session；该脚本只做CREATE TABLE IF NOT EXISTS，不读取sys_user、不删除数据。历史V001～V003仍不可执行。本轮已仅在新建独立库执行此补充脚本。
+
 依据：`housesystem.xlsx` 的 Sheet1，第二步 C2:C10、第三步 D2:D10。角色固定为 ADMIN 与 BROKER，所有后端源代码继续使用 `src/main/java/system`，业务目录内直接维护 Controller、Service、Models。
 
 本文是后端需求实现对照，部分接口还没有前端入口。2026年10月23日之后的当前演示基线与本轮修正见 [TEAM_ALIGNMENT.md](TEAM_ALIGNMENT.md)，启动与账号以 [TEAM_LOGIN.md](TEAM_LOGIN.md) 为准。

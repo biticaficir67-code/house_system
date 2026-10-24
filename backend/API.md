@@ -1,5 +1,7 @@
 # API 联调约定 v3（表格第二、三步）
 
+> 2026-10-24 实际联调补充：实际导入已确认：队员latest.sql第932行把auth_session等补充DDL拼成一行注释，常规导入不会创建会话表。导入后手动执行 `src/main/resources/db/migration/direct_account_sessions.sql` 补齐auth_session；该脚本只做CREATE TABLE IF NOT EXISTS，不读取sys_user、不删除数据。历史V001～V003仍不可执行。本轮已仅在新建独立库执行此补充脚本。
+
 新增接口及完整字段见 [WORKFLOW_IMPLEMENTATION.md](WORKFLOW_IMPLEMENTATION.md)，人工联调清单见 [INTEGRATION_CHECKLIST.md](INTEGRATION_CHECKLIST.md)。
 
 所有业务路径以 `/api` 开头，业务 JSON 字段使用 camelCase；AI 的 inputSnapshot、priceInterval 等嵌套快照保留 Python 协议的 snake_case 键。请求头 `Authorization: Bearer <token>`。成功响应 HTTP 200：
@@ -31,7 +33,7 @@
 
 当前直接使用 sys_admin、broker 原表登录、启停和改密，不复制到 sys_user，也不通过 sys_user_role 绑定身份。初始账号与字段见 [TEAM_LOGIN.md](TEAM_LOGIN.md)，请求只传 username/password。新版本需重新登录；账号接口的管理员id为负的sys_admin.id，经纪人为正的broker.id，业务brokerId不变。version由原记录资料计算，必须原样回传，不自行递增；原表不增加version字段。管理员phone/storeId返回null，姓名最多50字，资料更新不可传非空phone。
 
-注册即新增待审核broker；审核更新原记录，reject_reason最多255字，因此审核reason最多255字。会话使用latest已有且无sys_user外键的auth_session，不再读写application_session。
+注册即新增待审核broker；审核更新原记录，reject_reason最多255字，因此审核reason最多255字。会话使用会话补充脚本创建且无sys_user外键的auth_session，不再读写application_session。
 
 ## 2. 用户、角色、门店
 

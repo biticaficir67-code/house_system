@@ -1,5 +1,7 @@
 # 组员登录与账号字段说明
 
+> 2026-10-24 实际联调补充：实际导入已确认：队员latest.sql第932行把auth_session等补充DDL拼成一行注释，常规导入不会创建会话表。导入后手动执行 `src/main/resources/db/migration/direct_account_sessions.sql` 补齐auth_session；该脚本只做CREATE TABLE IF NOT EXISTS，不读取sys_user、不删除数据。历史V001～V003仍不可执行。本轮已仅在新建独立库执行此补充脚本。
+
 更新：2026-10-24。按当前要求，直接使用队员数据库里的 `sys_admin`、`broker`，不再复制账号到 `sys_user`，不读取 `sys_user_role`。数据库基线为 `database/house_system_latest.sql`，MySQL 8.0+。
 
 ## 登录
@@ -44,17 +46,17 @@ Content-Type: application/json
 
 version是由原记录资料计算的并发校验值，不新增数据库version列；修改时原样回传当前version，不自行加1。密码不进入该资料摘要，也不进入日志和账号响应。
 
-继续使用latest已有的auth_session，user_id保存上述账号编号，不连接sys_user；latest该列没有外键。业务凭证b2、申请凭证p2用途隔离，申请凭证20分钟，仅用于本人申请；application_session不再读写。凭证摘要关联原表当前密码、状态和门店，改密、停用、调店后旧凭证不能继续使用。登录/申请凭证不写日志。
+使用补充脚本创建的auth_session，user_id保存上述账号编号，不连接sys_user；该列不设账号外键。业务凭证b2、申请凭证p2用途隔离，申请凭证20分钟，仅用于本人申请；application_session不再读写。凭证摘要关联原表当前密码、状态和门店，改密、停用、调店后旧凭证不能继续使用。登录/申请凭证不写日志。
 
 新账号操作历史使用admin_account/broker_account资源类型；operation_log.actor_id使用上述账号编号。管理员操作同时写原sys_oper_log：operator_id为真实sys_admin.id、operator_type=1。历史日志不按新编号规则重新解释，不批量改写历史业务操作人。
 
 ## 启动与数据库边界
 
-已有latest数据库直接配置DB_URL、DB_USERNAME、DB_PASSWORD后启动后端；不额外执行历史V001～V003。后端不自动建表或导库，旧版带sys_user外键的auth_session结构不能直接用于本版。旧库需要先核对实际结构；不能用全量SQL覆盖需要保留的数据。
+已有latest数据库先检查并补齐auth_session，再配置DB_URL、DB_USERNAME、DB_PASSWORD后启动后端；不额外执行历史V001～V003。后端不自动建表或导库，旧版带sys_user外键的auth_session结构不能直接用于本版。旧库需要先核对实际结构；不能用全量SQL覆盖需要保留的数据。
 
 已有sys_admin记录无需bootstrap。只有已具备业务表和ADMIN角色、但sys_admin为空时，才临时配置BOOTSTRAP_KEY并调用初始化，完成后清空。旧账号迁移开关和V004已移除。
 
-本次没有连接实际MySQL、导入SQL、删除数据库表或修改初始数据文件。数据库中已有sys_user等历史表可暂留，运行时不会访问；实际清理需另行检查外键、旧数据和其他服务依赖。
+原表改造阶段未连接MySQL；之后经本人批准新建独立MySQL8.4并导入队员latest及会话补充脚本。未操作旧库、未修改队员初始数据文件。数据库中已有sys_user等历史表可暂留，运行时不会访问；实际清理需另行检查外键、旧数据和其他服务依赖。
 
 ## 常见问题
 

@@ -1,7 +1,7 @@
 # Copy to application-dev.yml; this local file is excluded by backend/.gitignore.
 # Configure DB_URL, DB_USERNAME and DB_PASSWORD in your IDE environment.
 # Original empty database: set BOOTSTRAP_KEY temporarily for the first administrator.
-# Current team baseline: house_system_latest.sql; no extra migration is needed.
+# Team baseline: house_system_latest.sql; then run direct_account_sessions.sql if auth_session is missing.
 # Login reads sys_admin and broker directly; see TEAM_LOGIN.md.
 spring:
   datasource:

@@ -1,3 +1,4 @@
+-- HISTORICAL ONLY: obsolete sys_user account model; do not run with current direct-account backend. See README.md.
 -- MySQL 8.0+; stop the backend, back up the database, run ONCE after V001 and V002.
 ALTER TABLE sys_user MODIFY store_id BIGINT NULL,
  ADD account_status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',

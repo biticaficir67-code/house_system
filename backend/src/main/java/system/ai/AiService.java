@@ -122,6 +122,25 @@ public class AiService {
                                             args("id", houseId));
                             if (!hash.equals(AiFeatures.hash(db, AiFeatures.text(locked))))
                                 return null;
+                            var old =
+                                    db.optional(
+                                            "SELECT * FROM house_text_analysis WHERE"
+                                                    + " house_id=#{p.id} FOR UPDATE",
+                                            args("id", houseId));
+                            if (old.isPresent()
+                                    && Objects.equals(hash, old.get().get("inputHash"))) {
+                                var cached = old.get();
+                                boolean running =
+                                        "PENDING".equals(cached.get("status"))
+                                                && cached.get("updatedAt")
+                                                        instanceof LocalDateTime started
+                                                && started.isAfter(
+                                                        LocalDateTime.now().minusSeconds(30));
+                                // Saving a house and the page retry may arrive together. Reuse one
+                                // completed/in-flight analysis; failures and expired work can
+                                // retry.
+                                if ("SUCCESS".equals(cached.get("status")) || running) return null;
+                            }
                             var values =
                                     args(
                                             "house_id",
@@ -144,11 +163,6 @@ public class AiService {
                                             null,
                                             "updated_at",
                                             LocalDateTime.now());
-                            var old =
-                                    db.optional(
-                                            "SELECT id FROM house_text_analysis WHERE"
-                                                    + " house_id=#{p.id}",
-                                            args("id", houseId));
                             if (old.isEmpty()) db.insert("house_text_analysis", values);
                             else db.update("house_text_analysis", id(old.get(), "id"), values);
                             return requestLog(house, actor, request, "TEXT", input, hash);

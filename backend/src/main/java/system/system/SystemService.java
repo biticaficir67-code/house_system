@@ -2,14 +2,12 @@ package system.system;
 
 import static system.common.DataStore.*;
 
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import system.auth.AuthService;
+import system.auth.*;
 import system.common.*;
 import system.security.*;
-import system.security.Permissions;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -20,53 +18,59 @@ public class SystemService {
     private final DataStore db;
     private final AccessScope scope;
     private final ResourceAccess access;
-    private final PasswordEncoder passwords;
     private final AuthService auth;
     private final AuditService audit;
     private final TaskService tasks;
+    private final AccountLock lock;
+    private final AccountStore accounts;
+    private final BrokerProfiles profiles;
 
     public SystemService(
             DataStore db,
             AccessScope scope,
             ResourceAccess access,
-            PasswordEncoder passwords,
             AuthService auth,
             AuditService audit,
-            TaskService tasks) {
+            TaskService tasks,
+            AccountLock lock,
+            AccountStore accounts,
+            BrokerProfiles profiles) {
         this.db = db;
         this.scope = scope;
         this.access = access;
-        this.passwords = passwords;
         this.auth = auth;
         this.audit = audit;
         this.tasks = tasks;
+        this.lock = lock;
+        this.accounts = accounts;
+        this.profiles = profiles;
     }
 
     public List<Map<String, Object>> stores() {
-        if (scope.user().administrator()) return db.list("SELECT * FROM store ORDER BY id", args());
-        return db.list("SELECT * FROM store WHERE id=#{p.id}", args("id", scope.user().storeId()));
+        return scope.user().administrator()
+                ? db.list("SELECT * FROM store ORDER BY id", args())
+                : db.list(
+                        "SELECT * FROM store WHERE id=#{p.id}", args("id", scope.user().storeId()));
     }
 
     @Transactional
-    public long createStore(SystemModels.StoreWrite body) {
+    public long createStore(SystemModels.StoreWrite b) {
         return db.insert(
-                "store",
-                args("name", body.name(), "address", body.address(), "enabled", body.enabled()));
+                "store", args("name", b.name(), "address", b.address(), "enabled", b.enabled()));
     }
 
     @Transactional
-    public void updateStore(long id, SystemModels.StoreWrite body) {
+    public void updateStore(long id, SystemModels.StoreWrite b) {
         db.one("SELECT id FROM store WHERE id=#{p.id} FOR UPDATE", args("id", id));
-        if (!body.enabled()) {
+        if (!b.enabled())
             Checks.require(!Objects.equals(scope.user().storeId(), id), "不能停用当前登录账号所在门店");
-        }
         db.update(
                 "store",
                 id,
-                args("name", body.name(), "address", body.address(), "enabled", body.enabled()));
+                args("name", b.name(), "address", b.address(), "enabled", b.enabled()));
         db.execute(
                 "UPDATE broker SET dept=#{p.name} WHERE store_id=#{p.id}",
-                args("name", body.name(), "id", id));
+                args("name", b.name(), "id", id));
     }
 
     public List<Map<String, Object>> roles() {
@@ -84,290 +88,184 @@ public class SystemService {
         return rows;
     }
 
-    public Object users(String keyword, Long storeId, String accountStatus, int page, int size) {
-        PageQuery query = new PageQuery(page, size);
-        var p =
-                args(
-                        "keyword",
-                        Checks.search(keyword),
-                        "offset",
-                        query.offset(),
-                        "size",
-                        query.size());
-        String filter =
-                p.get("keyword") == null
-                        ? ""
-                        : " WHERE (username LIKE CONCAT('%',#{p.keyword},'%') OR display_name LIKE"
-                                + " CONCAT('%',#{p.keyword},'%'))";
-        if (filter.isEmpty()) filter = " WHERE 1=1";
-        if (storeId != null) {
-            p.put("store", storeId);
-            filter += " AND store_id=#{p.store}";
-        }
-        if (accountStatus != null) {
-            Checks.choice(accountStatus, "PENDING", "ACTIVE", "REJECTED", "DISABLED");
-            p.put("status", accountStatus);
-            filter += " AND account_status=#{p.status}";
-        }
-        var rows =
-                db.list(
-                        "SELECT"
-                            + " id,username,display_name,phone,store_id,broker_id,enabled,account_status,review_reason,reviewed_by,reviewed_at,version,created_at"
-                            + " FROM sys_user"
-                                + filter
-                                + " ORDER BY id DESC LIMIT #{p.size} OFFSET #{p.offset}",
-                        p);
-        rows.forEach(
-                row ->
-                        row.put(
-                                "roles",
-                                db.list(
-                                        "SELECT r.id,r.code,r.name FROM sys_role r JOIN"
-                                                + " sys_user_role ur ON r.id=ur.role_id WHERE"
-                                                + " ur.user_id=#{p.id} AND r.enabled=1"
-                                                + " AND r.code IN ('ADMIN','BROKER')",
-                                        args("id", row.get("id")))));
-        return new PageResponse<>(
-                db.count("SELECT COUNT(*) AS value FROM sys_user" + filter, p), page, size, rows);
-    }
-
-    public Map<String, Object> user(long id) {
-        var row =
-                db.one(
-                        "SELECT"
-                            + " id,username,display_name,phone,store_id,broker_id,enabled,account_status,review_reason,reviewed_by,reviewed_at,version,created_at"
-                            + " FROM sys_user WHERE id=#{p.id}",
-                        args("id", id));
-        row.put(
-                "roles",
-                db.list(
-                        "SELECT r.id,r.code,r.name FROM sys_role r JOIN sys_user_role ur ON"
-                                + " ur.role_id=r.id WHERE ur.user_id=#{p.id} AND r.code IN"
-                                + " ('ADMIN','BROKER')",
-                        args("id", id)));
-        return row;
-    }
-
-    public Object logs(long id, int page, int size) {
-        user(id);
-        return audit.list("user", id, page, size);
-    }
-
-    private String roleCode(List<Long> roles) {
-        Checks.require(
-                roles != null && roles.size() == 1 && roles.get(0) != null, "每个账号必须选择一个管理员或经纪人身份");
-        var row =
+    private String roleCode(List<Long> ids) {
+        Checks.require(ids != null && ids.size() == 1 && ids.get(0) != null, "每个账号必须选择一个管理员或经纪人身份");
+        return (String)
                 db.optional(
-                        "SELECT code FROM sys_role WHERE id=#{p.id} AND enabled=1"
-                                + " AND code IN ('ADMIN','BROKER')",
-                        args("id", roles.get(0)));
-        Checks.require(row.isPresent(), "只能选择已启用的管理员或经纪人身份");
-        return (String) row.orElseThrow().get("code");
+                                "SELECT code FROM sys_role WHERE id=#{p.id} AND enabled=1 AND code"
+                                    + " IN ('ADMIN','BROKER')",
+                                args("id", ids.get(0)))
+                        .orElseThrow(() -> new BusinessException(400, "只能选择启用的管理员或经纪人身份"))
+                        .get("code");
     }
 
-    private void assignRoles(long userId, List<Long> roles) {
-        roleCode(roles);
-        db.execute("DELETE FROM sys_user_role WHERE user_id=#{p.id}", args("id", userId));
-        db.execute(
-                "INSERT INTO sys_user_role(user_id,role_id) VALUES(#{p.user},#{p.role})",
-                args("user", userId, "role", roles.get(0)));
+    public Object users(String keyword, Long store, String status, int page, int size) {
+        return accounts.list(keyword, store, status, page, size);
     }
 
-    @Transactional
-    public long createUser(SystemModels.UserCreate body) {
-        boolean brokerRole = "BROKER".equals(roleCode(body.roleIds()));
-        Checks.require(brokerRole || body.brokerId() == null, "新建管理员无需绑定经纪人档案");
-        access.store(body.storeId());
-        var store = db.one("SELECT name FROM store WHERE id=#{p.id}", args("id", body.storeId()));
-        Long broker = body.brokerId();
-        if (brokerRole && broker == null)
-            broker =
-                    db.insert(
-                            "broker",
-                            args(
-                                    "broker_name",
-                                    body.displayName(),
-                                    "phone",
-                                    body.phone(),
-                                    "dept",
-                                    store.get("name"),
-                                    "store_id",
-                                    body.storeId()));
-        else if (broker != null) {
-            var row =
-                    db.one("SELECT * FROM broker WHERE id=#{p.id} FOR UPDATE", args("id", broker));
-            Checks.require(
-                    row.get("storeId") != null && id(row, "storeId") == body.storeId(),
-                    "经纪人档案不属于该门店");
-            Checks.require(row.get("userId") == null, "该经纪人已绑定登录账号");
-        }
-        long userId =
-                db.insert(
-                        "sys_user",
-                        args(
-                                "username",
-                                body.username(),
-                                "password_hash",
-                                passwords.encode(Checks.password(body.password())),
-                                "display_name",
-                                body.displayName(),
-                                "phone",
-                                body.phone(),
-                                "store_id",
-                                body.storeId(),
-                                "broker_id",
-                                broker,
-                                "enabled",
-                                true));
-        if (broker != null) db.update("broker", broker, args("user_id", userId));
-        assignRoles(userId, body.roleIds());
-        audit.record("user", userId, "CREATE", "管理员开通内部账号", null, user(userId));
-        return userId;
+    public Map<String, Object> user(long key) {
+        return accounts.view(accounts.get(key, false));
+    }
+
+    public Object logs(long key, int page, int size) {
+        var a = accounts.get(key, false);
+        return audit.list(a.resource(), a.key(), page, size);
     }
 
     @Transactional
-    public void updateUser(long id, SystemModels.UserUpdate body) {
-        db.one("SELECT * FROM sys_bootstrap WHERE id=1 FOR UPDATE", args());
-        var old = db.one("SELECT * FROM sys_user WHERE id=#{p.id} FOR UPDATE", args("id", id));
-        system.house.HouseService.version(old, body.version());
-        Checks.require(
-                Set.of("ACTIVE", "DISABLED").contains(old.get("accountStatus")),
-                "待审核或已拒绝的账号必须通过审核接口处理");
-        var before = user(id);
-        boolean brokerRole = "BROKER".equals(roleCode(body.roleIds()));
-        access.store(body.storeId());
-        long adminRole = id(db.one("SELECT id FROM sys_role WHERE code='ADMIN'", args()), "id");
-        boolean wasAdmin =
-                db.count(
-                                "SELECT COUNT(*) AS value FROM sys_user_role WHERE user_id=#{p.id}"
-                                        + " AND role_id=#{p.role}",
-                                args("id", id, "role", adminRole))
-                        > 0;
-        if (wasAdmin && (!body.enabled() || !body.roleIds().contains(adminRole))) {
-            Checks.require(
-                    db.count(
-                                    "SELECT COUNT(*) AS value FROM sys_user u JOIN sys_user_role ur"
-                                            + " ON ur.user_id=u.id WHERE ur.role_id=#{p.role} AND"
-                                            + " u.enabled=1 AND u.account_status='ACTIVE' AND"
-                                            + " u.id<>#{p.id}",
-                                    args("role", adminRole, "id", id))
-                            > 0,
-                    "必须保留至少一个启用的管理员");
-        }
-        Checks.require(id != scope.user().id() || body.enabled(), "不能停用自己的账号");
-        if (!Objects.equals(old.get("storeId"), body.storeId()) && old.get("brokerId") != null) {
-            for (String table : List.of("house", "owner", "customer", "house_show", "house_deal")) {
-                String unfinished =
-                        switch (table) {
-                            case "house" -> " AND status<>'DEAL'";
-                            case "customer" -> " AND status='ACTIVE'";
-                            case "house_show" -> " AND status='SCHEDULED'";
-                            case "house_deal" ->
-                                    " AND status='CONFIRMED' AND verification_status<>'APPROVED'";
-                            default -> "";
-                        };
-                Checks.require(
-                        db.count(
-                                        "SELECT COUNT(*) AS value FROM "
-                                                + table
-                                                + " WHERE broker_id=#{p.broker} AND deleted=0"
-                                                + unfinished,
-                                        args("broker", old.get("brokerId")))
-                                == 0,
-                        "经纪人仍有业务记录，须先交接后再调整门店");
+    public long createUser(SystemModels.UserCreate b) {
+        lock.acquire();
+        String role = roleCode(b.roleIds());
+        AccountStore.Account a;
+        if (role.equals("ADMIN")) {
+            Checks.require(b.brokerId() == null, "管理员不绑定经纪人档案");
+            Checks.require(b.phone() == null || b.phone().isBlank(), "管理员原表没有电话字段");
+            a = accounts.createAdmin(b.username(), b.password(), b.displayName());
+        } else {
+            Checks.require(b.storeId() != null, "经纪人必须选择门店");
+            access.store(b.storeId());
+            String dept =
+                    (String)
+                            db.one(
+                                            "SELECT name FROM store WHERE id=#{p.id}",
+                                            args("id", b.storeId()))
+                                    .get("name");
+            if (b.brokerId() == null)
+                a =
+                        accounts.createBroker(
+                                b.username(),
+                                b.password(),
+                                b.displayName(),
+                                b.phone(),
+                                b.storeId(),
+                                dept,
+                                true);
+            else {
+                a = accounts.get(b.brokerId(), true);
+                Checks.require(!a.administrator() && !a.hasCredentials(), "该档案已有登录账号，请使用原账号或重置密码");
+                Checks.require(a.storeId() == null || a.storeId().equals(b.storeId()), "档案不属于该门店");
+                accounts.available(b.username());
+                a = accounts.profile(a, b.displayName(), b.phone());
+                a =
+                        accounts.update(
+                                a,
+                                args(
+                                        "username",
+                                        b.username(),
+                                        "store_id",
+                                        b.storeId(),
+                                        "dept",
+                                        dept,
+                                        "audit_status",
+                                        1,
+                                        "account_status",
+                                        1,
+                                        "reject_reason",
+                                        null));
+                a = accounts.password(a, b.password());
             }
         }
-        Long broker = old.get("brokerId") == null ? null : id(old, "brokerId");
-        if (brokerRole && broker == null)
-            broker =
-                    db.insert(
-                            "broker",
+        audit.record(a.resource(), a.key(), "CREATE", "管理员开通账号", null, accounts.view(a));
+        return a.key();
+    }
+
+    @Transactional
+    public void updateUser(long key, SystemModels.UserUpdate b) {
+        lock.acquire();
+        var a = accounts.get(key, true);
+        accounts.version(a, b.version());
+        Checks.require(Set.of("ACTIVE", "DISABLED").contains(a.status()), "待审核或已拒绝账号须通过审核处理");
+        Checks.require(roleCode(b.roleIds()).equals(a.type()), "身份由管理员表或经纪人表决定，不能直接互换");
+        Checks.require(key != scope.user().id() || b.enabled(), "不能停用自己的账号");
+        var before = accounts.view(a);
+        if (a.administrator()) {
+            if (!b.enabled())
+                Checks.require(
+                        db.count(
+                                        "SELECT COUNT(*) AS value FROM sys_admin WHERE"
+                                            + " COALESCE(is_deleted,0)=0 AND id<>#{p.id}",
+                                        args("id", a.sourceId()))
+                                > 0,
+                        "必须保留至少一个启用的管理员");
+            a = accounts.profile(a, b.displayName(), b.phone());
+            a = accounts.update(a, args("is_deleted", b.enabled() ? 0 : 1));
+        } else {
+            Checks.require(b.storeId() != null, "经纪人必须选择门店");
+            access.store(b.storeId());
+            if (!Objects.equals(a.storeId(), b.storeId())) {
+                for (String table :
+                        List.of("house", "owner", "customer", "house_show", "house_deal")) {
+                    String extra =
+                            switch (table) {
+                                case "house" -> " AND status<>'DEAL'";
+                                case "customer" -> " AND status='ACTIVE'";
+                                case "house_show" -> " AND status='SCHEDULED'";
+                                case "house_deal" ->
+                                        " AND status='CONFIRMED' AND"
+                                            + " verification_status<>'APPROVED'";
+                                default -> "";
+                            };
+                    Checks.require(
+                            db.count(
+                                            "SELECT COUNT(*) AS value FROM "
+                                                    + table
+                                                    + " WHERE broker_id=#{p.id} AND deleted=0"
+                                                    + extra,
+                                            args("id", a.sourceId()))
+                                    == 0,
+                            "经纪人仍有业务记录，须先交接后调整门店");
+                }
+            }
+            a = accounts.profile(a, b.displayName(), b.phone());
+            a =
+                    accounts.update(
+                            a,
                             args(
-                                    "broker_name",
-                                    body.displayName(),
-                                    "phone",
-                                    body.phone(),
                                     "store_id",
-                                    body.storeId(),
+                                    b.storeId(),
                                     "dept",
                                     db.one(
                                                     "SELECT name FROM store WHERE id=#{p.id}",
-                                                    args("id", body.storeId()))
+                                                    args("id", b.storeId()))
                                             .get("name"),
-                                    "user_id",
-                                    id));
-        db.update(
-                "sys_user",
-                id,
-                args(
-                        "display_name",
-                        body.displayName(),
-                        "phone",
-                        body.phone(),
-                        "store_id",
-                        body.storeId(),
-                        "broker_id",
-                        broker,
-                        "enabled",
-                        body.enabled(),
-                        "account_status",
-                        body.enabled() ? "ACTIVE" : "DISABLED",
-                        "version",
-                        id(old, "version") + 1));
-        if (broker != null)
-            db.update(
-                    "broker",
-                    broker,
-                    args(
-                            "broker_name",
-                            body.displayName(),
-                            "phone",
-                            body.phone(),
-                            "user_id",
-                            id,
-                            "store_id",
-                            body.storeId(),
-                            "dept",
-                            db.one(
-                                            "SELECT name FROM store WHERE id=#{p.id}",
-                                            args("id", body.storeId()))
-                                    .get("name")));
-        assignRoles(id, body.roleIds());
-        auth.revokeUser(id);
-        audit.record("user", id, "UPDATE", body.reason(), before, user(id));
+                                    "account_status",
+                                    b.enabled() ? 1 : 0));
+        }
+        auth.revokeUser(key);
+        audit.record(a.resource(), key, "UPDATE", b.reason(), before, accounts.view(a));
     }
 
     @Transactional
-    public void resetPassword(long id, String password) {
-        db.one("SELECT id FROM sys_user WHERE id=#{p.id}", args("id", id));
-        db.update(
-                "sys_user", id, args("password_hash", passwords.encode(Checks.password(password))));
-        auth.revokeUser(id);
-        audit.record("user", id, "RESET_PASSWORD", "管理员重置密码", null, null);
+    public void resetPassword(long key, String password) {
+        var a = accounts.get(key, true);
+        accounts.password(a, password);
+        auth.revokeUser(key);
+        audit.record(a.resource(), key, "RESET_PASSWORD", "管理员重置密码", null, null);
     }
 
-    public Object brokers(Long storeId, Boolean unbound) {
-        var p = args("store", storeId);
-        String condition = scope.sql("b", p);
+    public Object brokers(Long store, Boolean unbound) {
+        var p = args("store", store);
+        String name = profiles.nameColumn();
+        String source = "(SELECT broker.*,id AS broker_id FROM broker) b";
+        String condition;
         if (Boolean.TRUE.equals(unbound)) {
-            if (!scope.user().administrator()) throw new BusinessException(403, "仅管理员可查询待绑定档案");
-            return db.list(
-                    "SELECT b.id,b.broker_name,b.phone,b.dept,b.store_id,b.user_id FROM broker b"
-                        + " WHERE b.user_id IS NULL"
-                            + (storeId == null ? "" : " AND b.store_id=#{p.store}")
-                            + " ORDER BY b.id",
-                    p);
-        }
-        // broker owns itself; AccessScope's broker_id column is provided by this derived table.
+            if (!scope.user().administrator()) throw new BusinessException(403, "仅管理员可查询尚未开通的档案");
+            condition =
+                    "(b.username IS NULL OR TRIM(b.username)='' OR b.password IS NULL OR"
+                        + " TRIM(b.password)='')";
+        } else
+            condition =
+                    scope.sql("b", p)
+                            + " AND b.account_status=1 AND b.audit_status=1 AND"
+                            + " TRIM(b.username)<>'' AND TRIM(b.password)<>''";
+        if (store != null) condition += " AND b.store_id=#{p.store}";
         return db.list(
-                "SELECT b.id,b.broker_name,b.phone,b.dept,b.store_id,b.user_id FROM "
-                        + "(SELECT broker.*,id AS broker_id FROM broker) b WHERE "
+                "SELECT b.id,b."
+                        + name
+                        + " AS broker_name,b.phone,b.dept,b.store_id FROM "
+                        + source
+                        + " WHERE "
                         + condition
-                        + " AND EXISTS (SELECT 1 FROM sys_user u JOIN"
-                        + " sys_user_role ur ON ur.user_id=u.id JOIN sys_role r ON r.id=ur.role_id"
-                        + " WHERE u.id=b.user_id AND u.broker_id=b.id AND u.enabled=1 AND"
-                        + " u.account_status='ACTIVE' AND r.code='BROKER' AND r.enabled=1)"
-                        + (storeId == null ? "" : " AND b.store_id=#{p.store}")
                         + " ORDER BY b.id",
                 p);
     }

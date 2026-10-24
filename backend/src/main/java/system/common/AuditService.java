@@ -48,6 +48,21 @@ public class AuditService {
                         before == null ? null : db.json(before),
                         "after_snapshot",
                         after == null ? null : db.json(after)));
+        if (actor != null && actor < 0) {
+            db.insert(
+                    "sys_oper_log",
+                    args(
+                            "operator_id",
+                            -actor,
+                            "operator_type",
+                            1,
+                            "operate_type",
+                            event,
+                            "target_id",
+                            Math.abs(id),
+                            "content",
+                            reason));
+        }
     }
 
     public Object list(String resource, long id, int page, int size) {

@@ -1,3 +1,4 @@
+-- HISTORICAL ONLY: obsolete sys_user account model; do not run with current direct-account backend. See README.md.
 -- MySQL 8.0+; import the team's base dump into an EMPTY project database first.
 -- Run this version once. No DROP/TRUNCATE and no replacement of existing business records.
 CREATE TABLE IF NOT EXISTS backend_schema_version (version INT PRIMARY KEY, applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP);

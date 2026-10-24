@@ -6,32 +6,40 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import system.common.ApiResponse;
+import system.common.Checks;
+import system.common.DataStore;
+import system.security.AccessScope;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
-@RequestMapping("/api/reports")
 @PreAuthorize("hasAuthority('report:read')")
 public class ReportController {
     private final ReportService service;
+    private final DataStore db;
+    private final AccessScope scope;
 
-    public ReportController(ReportService service) {
+    public ReportController(ReportService service, DataStore db, AccessScope scope) {
         this.service = service;
+        this.db = db;
+        this.scope = scope;
     }
 
-    @GetMapping("/overview")
+    @GetMapping("/api/reports/overview")
     public ApiResponse<?> overview(@ModelAttribute ReportService.Filter filter) {
         return ApiResponse.success(service.overview(filter));
     }
 
-    @GetMapping("/{kind}")
+    @GetMapping("/api/reports/{kind}")
     public ApiResponse<?> report(
             @PathVariable String kind, @ModelAttribute ReportService.Filter filter) {
         return ApiResponse.success(service.query(kind, filter));
     }
 
-    @GetMapping("/houses/export")
+    @GetMapping("/api/reports/houses/export")
     public void export(@ModelAttribute ReportService.Filter filter, HttpServletResponse response)
             throws IOException {
         var rows = service.exportHouses(filter);
@@ -61,5 +69,287 @@ public class ReportController {
             }
             writer.println();
         }
+    }
+
+    // Runtime compatibility endpoints are kept here; the team-owned controller is preserved
+    // verbatim.
+    // ==================== 一、核心经营概览（报表首页首屏展示） ====================
+
+    /** 1. 带看-成交转化漏斗图：整体业务转化效率 */
+    @GetMapping("/api/report/custom/conversion-funnel")
+    public ApiResponse<List<Map<String, Object>>> getConversionFunnel(
+            @ModelAttribute ReportService.Filter filter) {
+        String sql =
+                "SELECT COALESCE(SUM(CASE WHEN status='ON_SALE' THEN 1 ELSE 0 END),0) AS"
+                    + " on_sale_house, COALESCE(SUM(CASE WHEN id IN (SELECT DISTINCT house_id FROM"
+                    + " house_show WHERE deleted=0) THEN 1 ELSE 0 END),0) AS has_show_house,"
+                    + " (SELECT COUNT(DISTINCT house_id) FROM report_deal) AS deal_house FROM house"
+                    + " WHERE deleted=0";
+        return ApiResponse.success(query(sql, filter));
+    }
+
+    /** 2. 门店业绩对比柱状图：两家门店的库存、带看、成交横向对比 */
+    @GetMapping("/api/report/custom/store-performance")
+    public ApiResponse<List<Map<String, Object>>> getStorePerformance(
+            @ModelAttribute ReportService.Filter filter) {
+        String sql =
+                "SELECT st.name AS store_name,COALESCE(h.cnt,0) AS on_sale_count,COALESCE(s.cnt,0)"
+                    + " AS show_count,COALESCE(d.cnt,0) AS deal_count FROM report_store st LEFT"
+                    + " JOIN (SELECT store_id,COUNT(*) cnt FROM report_house WHERE status='ON_SALE'"
+                    + " GROUP BY store_id) h ON h.store_id=st.id LEFT JOIN (SELECT"
+                    + " store_id,COUNT(*) cnt FROM report_show GROUP BY store_id) s ON"
+                    + " s.store_id=st.id LEFT JOIN (SELECT store_id,COUNT(*) cnt FROM report_deal"
+                    + " GROUP BY store_id) d ON d.store_id=st.id ORDER BY st.name";
+        return ApiResponse.success(query(sql, filter));
+    }
+
+    /** 3. 房源库存占比饼图：支持按门店/区域/小区三种维度切换 */
+    @GetMapping("/api/report/custom/house-stock")
+    public ApiResponse<List<Map<String, Object>>> getHouseStock(
+            @RequestParam(defaultValue = "store") String groupType,
+            @ModelAttribute ReportService.Filter filter) {
+
+        Checks.choice(groupType, "store", "district", "community");
+        String groupField;
+        String join = "";
+        String groupBy;
+        if ("district".equals(groupType)) {
+            groupField = "h.district";
+            groupBy = "h.district";
+        } else if ("community".equals(groupType)) {
+            groupField = "h.community_name";
+            groupBy = "h.community_name";
+        } else {
+            groupField = "s.name";
+            join = " JOIN store s ON h.store_id = s.id";
+            groupBy = "s.id, s.name";
+        }
+
+        String sql =
+                "SELECT "
+                        + groupField
+                        + " AS group_name, COUNT(h.id) AS house_count,"
+                        + " ROUND(COUNT(h.id)*100.0/NULLIF((SELECT COUNT(*) FROM house WHERE"
+                        + " deleted=0 AND status='ON_SALE'),0),2) AS ratio FROM house h "
+                        + join
+                        + " WHERE h.deleted=0 AND h.status='ON_SALE' "
+                        + "GROUP BY "
+                        + groupBy
+                        + " ORDER BY house_count DESC";
+
+        return ApiResponse.success(query(sql, filter));
+    }
+
+    // ==================== 二、房源结构分析（库存维度二级页面） ====================
+
+    /** 4. 房源库龄分布直方图：滞销房源占比 */
+    @GetMapping("/api/report/custom/house-age-distribution")
+    public ApiResponse<List<Map<String, Object>>> getHouseAgeDistribution(
+            @ModelAttribute ReportService.Filter filter) {
+        String sql =
+                "SELECT CASE   WHEN DATEDIFF((SELECT MAX(listing_date) FROM house), listing_date)"
+                    + " <= 30 THEN '0-30天'   WHEN DATEDIFF((SELECT MAX(listing_date) FROM house),"
+                    + " listing_date) <= 60 THEN '31-60天'   WHEN DATEDIFF((SELECT MAX(listing_date)"
+                    + " FROM house), listing_date) <= 90 THEN '61-90天'   ELSE '90天以上' END AS"
+                    + " age_bucket, COUNT(*) AS house_count FROM house WHERE deleted=0 AND"
+                    + " status='ON_SALE' AND listing_date IS NOT NULL GROUP BY age_bucket ORDER BY"
+                    + " age_bucket";
+        return ApiResponse.success(query(sql, filter));
+    }
+
+    /** 5. 房源户型占比环形图 */
+    @GetMapping("/api/report/custom/house-room-type")
+    public ApiResponse<List<Map<String, Object>>> getHouseRoomType(
+            @ModelAttribute ReportService.Filter filter) {
+        String sql =
+                "SELECT CASE rooms WHEN 1 THEN '1室' WHEN 2 THEN '2室' WHEN 3 THEN '3室' ELSE CASE"
+                        + " WHEN rooms>=4 THEN '4室及以上' ELSE '未知' END END AS room_type, COUNT(*) AS"
+                        + " house_count FROM house WHERE deleted=0 AND status='ON_SALE' GROUP BY"
+                        + " room_type ORDER BY house_count DESC";
+        return ApiResponse.success(query(sql, filter));
+    }
+
+    /** 6. 各户型均价分布：不同户型的价格区间对比 */
+    @GetMapping("/api/report/custom/house-price-range")
+    public ApiResponse<List<Map<String, Object>>> getHousePriceRange(
+            @ModelAttribute ReportService.Filter filter) {
+        String sql =
+                "SELECT CASE rooms WHEN 1 THEN '1室' WHEN 2 THEN '2室' WHEN 3 THEN '3室' ELSE CASE"
+                    + " WHEN rooms>=4 THEN '4室及以上' ELSE '未知' END END AS room_type, COUNT(*) AS"
+                    + " house_count, ROUND(AVG(listing_price_yuan)/10000,1) AS avg_price_wan,"
+                    + " ROUND(MIN(listing_price_yuan)/10000,1) AS min_price_wan,"
+                    + " ROUND(MAX(listing_price_yuan)/10000,1) AS max_price_wan FROM house WHERE"
+                    + " deleted=0 AND status='ON_SALE' AND listing_price_yuan>0 GROUP BY room_type"
+                    + " ORDER BY avg_price_wan DESC";
+        return ApiResponse.success(query(sql, filter));
+    }
+
+    /** 7. 房源装修状态分布 */
+    @GetMapping("/api/report/custom/house-decoration")
+    public ApiResponse<List<Map<String, Object>>> getHouseDecoration(
+            @ModelAttribute ReportService.Filter filter) {
+        String sql =
+                "SELECT decoration AS decoration_type, COUNT(*) AS house_count FROM house WHERE"
+                        + " deleted=0 AND status='ON_SALE' AND decoration IS NOT NULL GROUP BY"
+                        + " decoration_type ORDER BY house_count DESC";
+        return ApiResponse.success(query(sql, filter));
+    }
+
+    // ==================== 三、业务趋势分析（时间维度二级页面） ====================
+
+    /** 8. 月度成交趋势折线图 */
+    @GetMapping("/api/report/custom/deal-trend")
+    public ApiResponse<List<Map<String, Object>>> getDealTrend(
+            @ModelAttribute ReportService.Filter filter) {
+        String sql =
+                "SELECT DATE_FORMAT(deal_time,'%Y-%m') AS deal_month,COUNT(*) AS deal_count FROM"
+                        + " report_deal GROUP BY deal_month ORDER BY deal_month";
+        return ApiResponse.success(query(sql, filter));
+    }
+
+    /** 9. 月度带看量趋势折线图 */
+    @GetMapping("/api/report/custom/show-trend")
+    public ApiResponse<List<Map<String, Object>>> getShowTrend(
+            @ModelAttribute ReportService.Filter filter) {
+        String sql =
+                "SELECT DATE_FORMAT(completed_time, '%Y-%m') AS show_month, "
+                        + "COUNT(*) AS show_count "
+                        + "FROM house_show "
+                        + "WHERE deleted=0 AND completed_time IS NOT NULL "
+                        + "GROUP BY show_month ORDER BY show_month ASC";
+        return ApiResponse.success(query(sql, filter));
+    }
+
+    /** 10. 成交周期分布直方图：从挂牌到成交的去化效率 */
+    @GetMapping("/api/report/custom/deal-cycle")
+    public ApiResponse<List<Map<String, Object>>> getDealCycle(
+            @ModelAttribute ReportService.Filter filter) {
+        String sql =
+                "SELECT CASE WHEN DATEDIFF(d.deal_time,h.listing_date)<=30 THEN '30天内成交' WHEN"
+                    + " DATEDIFF(d.deal_time,h.listing_date)<=60 THEN '31-60天成交' WHEN"
+                    + " DATEDIFF(d.deal_time,h.listing_date)<=90 THEN '61-90天成交' ELSE '90天以上成交' END"
+                    + " AS cycle_bucket,COUNT(*) AS"
+                    + " deal_count,ROUND(AVG(DATEDIFF(d.deal_time,h.listing_date)),1) AS"
+                    + " avg_cycle_days FROM report_deal d JOIN history_houses h ON h.id=d.house_id"
+                    + " WHERE h.listing_date IS NOT NULL AND"
+                    + " DATEDIFF(d.deal_time,h.listing_date)>=0 GROUP BY cycle_bucket ORDER BY"
+                    + " cycle_bucket";
+        return ApiResponse.success(query(sql, filter));
+    }
+
+    // ==================== 四、人效与客户转化分析（员工/客户维度二级页面） ====================
+
+    /** 11. 经纪人带看/成交对比柱状图：所有人产能对比 */
+    @GetMapping("/api/report/custom/broker-performance")
+    public ApiResponse<List<Map<String, Object>>> getBrokerPerformance(
+            @ModelAttribute ReportService.Filter filter) {
+        String sql =
+                "SELECT b.name AS broker_name, s.name AS store_name, COUNT(DISTINCT sh.id) AS"
+                    + " show_count, COUNT(DISTINCT h.id) AS deal_count, CASE WHEN COUNT(DISTINCT"
+                    + " sh.id)=0 THEN NULL ELSE ROUND(COUNT(DISTINCT h.id)*100.0/COUNT(DISTINCT"
+                    + " sh.id),2) END AS conversion_rate FROM broker b LEFT JOIN store s ON"
+                    + " b.store_id = s.id LEFT JOIN house_show sh ON b.id = sh.broker_id AND"
+                    + " sh.deleted=0 LEFT JOIN report_deal h ON b.id=h.broker_id GROUP BY b.id,"
+                    + " b.name, s.name ORDER BY deal_count DESC, show_count DESC";
+        return ApiResponse.success(query(sql, filter));
+    }
+
+    /** 12. 经纪人业绩排行TOP10横向柱状图 */
+    @GetMapping("/api/report/custom/broker-ranking")
+    public ApiResponse<List<Map<String, Object>>> getBrokerRanking(
+            @ModelAttribute ReportService.Filter filter) {
+        String sql =
+                "SELECT b.name AS broker_name, s.name AS store_name, COUNT(DISTINCT sh.id) AS"
+                    + " show_count, COUNT(DISTINCT h.id) AS deal_count,"
+                    + " ROUND(AVG(h.transaction_price_yuan)/10000,1) AS avg_deal_price_wan FROM"
+                    + " broker b LEFT JOIN store s ON b.store_id = s.id LEFT JOIN house_show sh ON"
+                    + " b.id=sh.broker_id AND sh.deleted=0 LEFT JOIN report_deal h ON"
+                    + " b.id=h.broker_id GROUP BY b.id, b.name, s.name ORDER BY deal_count DESC,"
+                    + " show_count DESC LIMIT 10";
+        return ApiResponse.success(query(sql, filter));
+    }
+
+    /** 13. 客户复看率分布：客户带看次数分层 */
+    @GetMapping("/api/report/custom/customer-revisit")
+    public ApiResponse<List<Map<String, Object>>> getCustomerRevisit(
+            @ModelAttribute ReportService.Filter filter) {
+        String sql =
+                "SELECT CASE "
+                        + "WHEN show_cnt=1 THEN '只看1次' WHEN show_cnt=2 THEN '看2次' "
+                        + "ELSE '看3次及以上' END AS revisit_type, COUNT(*) AS customer_count "
+                        + "FROM (SELECT customer_id, COUNT(*) AS show_cnt FROM house_show "
+                        + "WHERE deleted=0 AND customer_id IS NOT NULL GROUP BY customer_id) t "
+                        + "GROUP BY revisit_type ORDER BY customer_count DESC";
+        return ApiResponse.success(query(sql, filter));
+    }
+
+    // ==================== 非报表接口补充 ====================
+    /** 操作日志列表（管理员用） */
+    @GetMapping("/api/report/custom/oper-log")
+    @PreAuthorize("hasAuthority('system:manage')")
+    public ApiResponse<List<Map<String, Object>>> getOperLog(
+            @ModelAttribute ReportService.Filter filter) {
+        String sql =
+                "SELECT id,operator_id,operator_type,operate_type,target_id,content,operate_time"
+                        + " FROM sys_oper_log ORDER BY id DESC"
+                        + " LIMIT 100";
+        return ApiResponse.success(db.list(sql, Map.of()));
+    }
+
+    // All C chart queries share scoped, dated sources. Table substitutions are internal constants.
+    private List<Map<String, Object>> query(String sql, ReportService.Filter f) {
+        Checks.require(
+                f.from() == null || f.to() == null || !f.from().isAfter(f.to()), "起始日期不能晚于结束日期");
+        Checks.require(f.storeId() == null || f.storeId() > 0, "门店ID必须大于零");
+        Map<String, Object> p = new HashMap<>();
+        p.put("from", f.from());
+        p.put("until", f.to() == null ? null : f.to().plusDays(1));
+        p.put("store", f.storeId());
+        String h = source("h", "listing_date", f, p),
+                sh = source("s", "completed_time", f, p),
+                d = source("d", "deal_time", f, p);
+        String historical =
+                scope.sql("h", p) + (f.storeId() == null ? "" : " AND h.store_id=#{p.store}");
+        String broker =
+                scope.sql("b", p) + (f.storeId() == null ? "" : " AND b.store_id=#{p.store}");
+        String stores = scope.user().administrator() ? "1=1" : "st.id=#{p._scopeStore}";
+        if (!scope.user().administrator()) p.put("_scopeStore", scope.user().storeId());
+        if (f.storeId() != null) stores += " AND st.id=#{p.store}";
+        String views =
+                "WITH report_house AS (SELECT h.* FROM house h WHERE h.deleted=0 AND "
+                        + h
+                        + "), report_show AS (SELECT s.* FROM house_show s WHERE s.deleted=0 AND"
+                        + " s.status='COMPLETED' AND s.data_origin='BUSINESS' AND "
+                        + sh
+                        + "), report_deal AS (SELECT d.* FROM house_deal d WHERE d.deleted=0 AND"
+                        + " d.status='CONFIRMED' AND d.verified=1 AND"
+                        + " d.verification_status='APPROVED' AND "
+                        + d
+                        + "), report_broker AS (SELECT b.* FROM (SELECT broker.*,id AS broker_id"
+                        + " FROM broker) b WHERE "
+                        + broker
+                        + "),"
+                        + " report_store AS (SELECT st.* FROM store st WHERE "
+                        + stores
+                        + "),"
+                        + " history_houses AS (SELECT h.* FROM house h WHERE "
+                        + historical
+                        + ") ";
+        sql =
+                sql.replaceAll("\\bhouse_show\\b", "report_show")
+                        .replaceAll("\\bhouse\\b", "report_house")
+                        .replaceAll("\\bbroker\\b", "report_broker")
+                        .replaceAll("\\bstore\\b", "report_store");
+        if (!sql.contains(" LIMIT ")) sql += " LIMIT 1000";
+        return db.list(views + sql, p);
+    }
+
+    private String source(
+            String alias, String date, ReportService.Filter f, Map<String, Object> p) {
+        String result = scope.sql(alias, p);
+        if (f.storeId() != null) result += " AND " + alias + ".store_id=#{p.store}";
+        if (f.from() != null) result += " AND " + alias + "." + date + ">=#{p.from}";
+        if (f.to() != null) result += " AND " + alias + "." + date + "<#{p.until}";
+        return result;
     }
 }

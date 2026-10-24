@@ -1,6 +1,14 @@
 # Copy to application-dev.yml; this local file is excluded by backend/.gitignore.
 # Configure DB_URL, DB_USERNAME and DB_PASSWORD in your IDE environment.
-# First administrator only: set BOOTSTRAP_KEY temporarily, then clear it after initialization.
+# Original empty database: set BOOTSTRAP_KEY temporarily for the first administrator.
+# Current team baseline: house_system_latest.sql; no extra migration is needed.
+# Login reads sys_admin and broker directly; see TEAM_LOGIN.md.
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:mysql://127.0.0.1:3306/house_system?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai}
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+
 logging:
   level:
     system: info

@@ -2,17 +2,19 @@
 
 Spring Boot 3.5、Java 17、Spring Security、MyBatis、MySQL 8.0+。所有 Java 文件保持在 `src/main/java/system`，业务模块内直接放 Controller/Service/Models，不增加 entity/dto/impl 等层级目录。
 
-## 本次表格修改
+## 当前组内进度
 
 已合并队员新增的自定义报表接口；兼容调整和新上传全量 SQL 的使用边界见 [队员报表合并说明](TEAM_REPORT_INTEGRATION.md)。
 
+已按10月22日晚之后的组内讨论对齐当前 main 与最新演示底稿，见 [本轮后端对齐说明](TEAM_ALIGNMENT.md)。当前账号直接使用 sys_admin、broker 原字段，不再复制到 sys_user；登录步骤见 [组员登录联调](TEAM_LOGIN.md)。
+
 新增经纪人申请与审核、四种账号状态、本人资料、员工操作日志、媒体封面排序、共同委托、待跟进/回访、预约交接及成交核实拒绝重提。详见 [表格需求实现说明](WORKFLOW_IMPLEMENTATION.md) 和 [第三步联调清单](INTEGRATION_CHECKLIST.md)。
 
-升级已有开发库时必须在 V001、V002 后执行一次 V003；本次代码不会自动迁移或连接本机数据库。前端显示、C 的复杂 SQL、D 的实际算法服务按清单联调。
+当前组内以 house_system_latest.sql 为完整演示底稿，不额外执行历史 V001～V003。代码不自动执行数据库迁移，旧账号复制服务与 V004 已移除。
 
 ## 已实现
 
-- 不透明 Bearer Token、BCrypt 密码、退出/改密后撤销会话、登录失败限流；管理员查看全部业务，经纪人只操作本人所在门店且由本人负责的数据。
+- Bearer Token、BCrypt 密码、退出/改密后撤销会话、登录失败限流；管理员查看全部业务，经纪人只操作本人所在门店且由本人负责的数据。
 - 仅管理员 ADMIN、经纪人 BROKER 两种固定身份，每个账号选择一种；经纪人提交申请后由管理员审核，也保留管理员直接开通内部账号，菜单由权限生成，后端逐接口鉴权。
 - 管理员/经纪人工作台：今日预约、在售房源、待核验房源、待核实成交、委托到期与未读提醒。
 - 房源分页筛选、详情、录入编辑、负责人交接、核验、上下架、归档、状态时间线。
@@ -32,7 +34,7 @@ Spring Boot 3.5、Java 17、Spring Security、MyBatis、MySQL 8.0+。所有 Java
 | 业务 | 管理员 ADMIN | 经纪人 BROKER |
 | --- | --- | --- |
 | 工作台 | 全局待办、待核验房源、待核实成交 | 本人今日带看、待核验进度、到期委托 |
-| 账号和门店 | 开通账号、启停、改身份、重置密码、管理门店 | 查看本店信息、修改本人密码 |
+| 账号和门店 | 开通账号、启停、重置密码、管理门店 | 查看本店信息、修改本人密码 |
 | 房源和媒体 | 全部资料、核验、分配与交接、上下架、归档 | 本人房源录入/编辑/媒体、核验通过后上下架、符合条件时归档 |
 | 业主和委托 | 全部档案、委托、负责人调整、跟进和提醒 | 本人档案、委托、跟进和提醒 |
 | 客户和需求 | 全部档案、负责人调整、需求与跟进 | 本人客户、需求、标签、房源匹配与跟进 |
@@ -45,16 +47,13 @@ Spring Boot 3.5、Java 17、Spring Security、MyBatis、MySQL 8.0+。所有 Java
 
 ## 数据库准备
 
-现有本机 MySQL 5.1 不适用于组员的 MySQL 8.x 数据文件。请使用独立的 MySQL 8.0+ 开发数据库；这些代码不会自动升级 MySQL 或自动执行建库脚本。
+当前协作基线是 `../database/house_system_latest.sql`，使用 MySQL 8.0+。它是会清空重建 house_system 的完整演示包，仅用于已确认可以覆盖的开发环境；已有要保留的数据时先备份并核对方案。后端不会自动导入或重建数据库。
 
-1. 在**新建、没有业务数据的开发实例/库**中导入仓库 `../database/house_system_full.sql`。该原始全量文件包含 DROP TABLE，只用于初始化空库，不能对已有业务库重复导入。
-2. 连接 `house_system`，执行一次 `src/main/resources/db/migration/V001__backend_business.sql`。该脚本增加业务表和现有表的列，不删除组员的房源/带看数据。
-3. 接着执行一次 `src/main/resources/db/migration/V002__admin_broker_only.sql`，然后执行一次 `src/main/resources/db/migration/V003__workflow_completion.sql`；确认版本包含 1、2、3。已有 V001/V002 库仅补后续未执行版本，勿重复运行 ALTER TABLE。
-4. 原始带看数据标成 `LEGACY_DEMO`，不计入真实带看报表；导入房源保留 `LEGACY_IMPORT`。经纪人根据原 dept 关联门店；登录账号通过管理接口显式绑定经纪人。
+已导入 latest 的库直接配置并启动；管理员使用 sys_admin、经纪人使用 broker，初始化、注册、审核与账号维护通过已有 ADMIN 角色行锁串行处理，不依赖 sys_bootstrap 或 sys_user。
 
-执行脚本需要数据库账号具备建表、修改表权限；日常运行账号仅需要业务表的查询/增改权限。开发时可先使用已有开发账号，配置值不写进 Git。
+历史数据库底稿与 backend 中 V001～V003 仅供查阅旧实现，不用于当前账号体系。旧版 auth_session 带 sys_user 外键，不能直接用于本版；字段与边界见 [TEAM_LOGIN.md](TEAM_LOGIN.md)。
 
-从旧五角色版本升级时，停后端并备份数据库，再执行 V002。已有 ADMIN 保留；其他旧身份统一成为 BROKER，不会自动提升为管理员；旧角色停用且不再分配，账号与业务资料保留。没有业务档案的经纪人账号会补建档案，但不会自动接管其他人的历史业务。所有旧会话撤销，需重新登录。脚本不会自动执行，本次源码修改也不改动本机数据库。
+最新底稿同时保留 broker.name/broker_name、旧账号列。后端在正常新增档案时兼容必填列、保存 BCrypt 摘要，改名时同步双字段；不修改组员数据库文件，也不在启动时执行结构变更。
 
 ## 配置与启动
 
@@ -82,7 +81,7 @@ mvn spring-boot:run
 
 或在 IDEA 中运行 `system.HouseSystemApplication`。本地配置可放 `application-dev.yml`，该文件由 backend/.gitignore 排除。
 
-首次使用时，设一个临时 `BOOTSTRAP_KEY`，调用 `POST /api/auth/bootstrap`（请求头 `X-Bootstrap-Key` 与环境变量一致）创建管理员；只有用户表为空时可成功。创建后清空该环境变量并重启。没有写死的演示账号或默认管理员密码。
+最新底稿原表中管理员 admin、经纪人 broker01～broker10 的初始密码均为123456；实际已改密时以原表为准。旧明文密码成功核验后原字段升级为 BCrypt。已有管理员无需 bootstrap；只有业务表及 ADMIN 角色齐备、sys_admin 为空时才临时启用初始化，完成后清空密钥。
 
 接口文档：`http://localhost:8080/swagger-ui/index.html`。OpenAPI JSON：`/v3/api-docs`。登录获取 token 后，在 Swagger 的 Authorize 输入 token，再调用受保护接口。完整字段与流程见 [API.md](API.md)。
 
@@ -91,21 +90,16 @@ mvn spring-boot:run
 - `system` 包是基础包，子模块 `system/system` 负责账号角色门店。
 - SQL 参数通过 MyBatis 绑定；通用 `DataMapper/DataStore` 仅接受 Java 内部生成的 SQL，HTTP 请求不能提供表名、列名或排序 SQL。现有 `HouseMapper.xml` 保留原查询协议供组员参考。
 - 两种身份及权限固定：ADMIN 为 ALL，BROKER 为 OWN（本店且负责人为本人）。角色只提供查询接口，移除新增角色、编辑权限和任意数据范围配置接口；服务端按身份确定实际权限，不信任数据库中遗留的自定义权限字符串。后续如需调整职责，统一修改 `security/Permissions.java` 并同步迁移脚本与接口文档。
-- 新建管理员不创建经纪人档案；新建经纪人可自动创建档案或绑定本店未绑定的旧档案。管理员改为经纪人时自动补建缺失档案；经纪人改为管理员保留历史档案，后续新业务的经纪人选择不再列出该管理员。不得停用自己，必须保留一个启用的管理员，身份变更或停用立即撤销旧会话。
-- 旧数据有 broker 但未绑定 sys_user 时，不会自动成为某人的登录身份。通过用户创建接口绑定已有 brokerId。
+- 新建管理员写 sys_admin，新建经纪人写 broker；注册直接创建待审核 broker，审核更新同一条记录。身份由原表决定，不能通过编辑角色互换；不得停用自己，必须保留一个启用管理员。
+- 管理员姓名对应 admin_name，原表没有电话和门店；经纪人姓名对应 name，并同步已有 broker_name。账号接口管理员 id=-sys_admin.id，经纪人 id=broker.id，直接使用返回值；业务 brokerId 不变。version由原资料计算，修改时原样回传，不新增字段。旧凭证需重新登录，详见 TEAM_LOGIN.md。
 - 状态变更、委托、预约和成交保留记录；归档和媒体移除是逻辑删除，媒体原文件保留以便恢复，需由部署方安排文件归档策略。
 - PUT 更新业务记录时携带当前 version，过期返回 409。并发预约锁定经纪人；成交锁定房源，防止重复登记。
 - 日期范围的结束日期包含当天；业务日期使用 Asia/Shanghai 口径。ID 在命名为 id/*Id 的字段中按字符串返回，页码、数量和金额保持数值。
-- 文案服务在房源提交后调用，失败时房源照常保存；详情从数据库读取结果，不会重复调用 Python。请求日志保留失败及过期状态。
+- 文案服务在房源提交后调用，失败时房源照常保存；相同文案的成功结果复用，30秒内在途请求合并，失败/超时可重试。详情读取缓存，不重复调用 Python；请求日志保留失败及过期状态。
 - 估价不会输入挂牌价格、客户预算或卖点文案；UNAVAILABLE 的价格/区间保持 null。估价不改变挂牌价或成交价。房源特征变化后历史预测 stale=true。
 - 真实成交报表仅统计 CONFIRMED 且 verified=true 的记录；挂牌均价只是挂牌口径，AI 结果仅为历史参考。
 - C 的复杂报表 SQL 可实现 `ReportExtension`；使用传入的 scopedSource 作为子查询，沿用门店/经纪人/日期过滤，基础数据与字段说明见 API.md。
 
-## 验证
+## 本轮检查
 
-```shell
-mvn test
-mvn package
-```
-
-集成测试使用 H2 独立内存库和模拟的 Python HTTP 服务，不会连接本机 MySQL。覆盖登录撤销、角色和数据隔离、房源/业主/客户/带看/成交流程、并发预约、媒体校验、AI 空值/快照/过期、CORS。测试 schema 保持业务列约束，JSON 列在 H2 中以文本表示；MySQL 原增量 DDL、组员数据库及实际 Python 服务仍需在 MySQL 8 联调环境运行验证。
+本轮仅编译打包，跳过全部测试；未连接实际MySQL、导入数据库或启动服务联调。现有测试夹具仍基于旧账号表，尚未适配本次原表账号方案。后续业务验收见 INTEGRATION_CHECKLIST.md。

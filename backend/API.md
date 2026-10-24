@@ -27,7 +27,11 @@
 | GET/PUT | /auth/application | X-Application-Token；本人申请及历史 / REJECTED 后修改并重申，version必传 |
 | GET/PUT | /auth/profile | 本人资料 / displayName、phone、version，同步经纪人档案 |
 
-账号长度 3–64，允许字母数字及 _.-；新密码至少 10 字符，UTF-8 最多 72 字节。首次初始化在用户表为空且 BOOTSTRAP_KEY 已配置时启用。登录失败 5 次后，同一客户端地址与账号组合限流 5 分钟。
+新建账号长度 3–50，允许字母数字及 _.-；新密码至少 10 字符，UTF-8 最多 72 字节。首次初始化要求 sys_admin 为空、业务表和ADMIN角色齐备且 BOOTSTRAP_KEY 已配置。登录失败 5 次后，同一客户端地址与账号组合限流 5 分钟。
+
+当前直接使用 sys_admin、broker 原表登录、启停和改密，不复制到 sys_user，也不通过 sys_user_role 绑定身份。初始账号与字段见 [TEAM_LOGIN.md](TEAM_LOGIN.md)，请求只传 username/password。新版本需重新登录；账号接口的管理员id为负的sys_admin.id，经纪人为正的broker.id，业务brokerId不变。version由原记录资料计算，必须原样回传，不自行递增；原表不增加version字段。管理员phone/storeId返回null，姓名最多50字，资料更新不可传非空phone。
+
+注册即新增待审核broker；审核更新原记录，reject_reason最多255字，因此审核reason最多255字。会话使用latest已有且无sys_user外键的auth_session，不再读写application_session。
 
 ## 2. 用户、角色、门店
 
@@ -51,9 +55,9 @@
 
 仅 ADMIN 管理员、BROKER 经纪人。每个账号只能选择一个身份，roleIds 为单元素数组。ADMIN 的 dataScope 固定 ALL；BROKER 固定 OWN，同时限制本店与本人 brokerId，列表、详情、工作台、报表及导出使用相同范围。经纪人显式提交其他 storeId/brokerId 作为业务归属时返回 403；筛选不可见范围返回空列表，猜详情 ID 返回 404。账号权限由服务端固定映射，数据库中遗留的自定义权限、数据范围不能扩大经纪人的权限。店长、财务、内勤的独立身份和可配置角色接口已移除。
 
-ADMIN 拥有全部 permission：system:manage/system:read、house:read/house:write/house:verify/house:assign、owner:read/owner:write、customer:read/customer:write、showing:read/showing:write、deal:read/deal:write/deal:verify、ai:use、report:read。BROKER 拥有其中除 system:manage、house:verify、house:assign、deal:verify 外的权限，报表仅本人数据。接口鉴权独立于菜单显示。必须保留至少一个启用的 ADMIN，不得停用当前登录账号。业主和客户为业务资料，不是系统角色；没有业主或客户登录接口。仅经纪人可申请注册，PENDING/REJECTED/DISABLED 不得登录业务；ACTIVE 才允许。待审核/已拒绝暂无门店和经纪人档案，管理员审批通过时建立关联。
+ADMIN 拥有全部 permission：system:manage/system:read、house:read/house:write/house:verify/house:assign、owner:read/owner:write、customer:read/customer:write、showing:read/showing:write、deal:read/deal:write/deal:verify、ai:use、report:read。BROKER 拥有其中除 system:manage、house:verify、house:assign、deal:verify 外的权限，报表仅本人数据。接口鉴权独立于菜单显示。必须保留至少一个启用的 ADMIN，不得停用当前登录账号。业主和客户为业务资料，不是系统角色；没有业主或客户登录接口。仅经纪人可申请注册，PENDING/REJECTED/DISABLED 不得登录业务；ACTIVE 才允许。注册后的申请就是原broker记录，暂时没有门店，审核通过时在同一行分配门店；brokerId若传入必须等于该申请的broker.id。
 
-创建 BROKER 用户未指定 brokerId 时自动创建并关联经纪人档案；指定时仅能绑定同门店且未绑定账号的旧档案。创建 ADMIN 不创建经纪人档案，brokerId 必须为空。ADMIN 改为 BROKER 时自动补建缺失档案；BROKER 改为 ADMIN 保留原经纪人档案与历史业务，但该账号不再作为新业务的可选经纪人。被停用账号同样不可被分配新业务。未绑定账号的原始经纪人档案保留以供管理员绑定。账号列表不返回密码哈希；修改身份、停用、改密或重置密码撤销旧会话。有未交接业务的经纪人不可直接跨店调动。
+创建BROKER未指定brokerId时直接新增broker；指定时只允许同店且没有完整登录凭据的原档案。创建ADMIN直接写sys_admin，brokerId必须为空；角色与原表一致，不支持通过角色编辑将管理员和经纪人互换。完整账号应使用原账号或重置密码。账号列表不返回密码；停用、调店、改密或重置密码使旧凭证失效。有未交接业务的经纪人不可直接跨店调动。
 
 创建内部经纪人的示例（先由 GET /roles 获取 BROKER 的 id，下方门店 1、角色 2 均需换成实际 ID）：
 
@@ -221,3 +225,5 @@ C 可实现 `system.report.ReportExtension` Spring Bean。框架传入已按门�
 4. 预约 → 实际完成带看 → 回访。
 5. 经纪人登记成交 → 管理员核实 → 双方查看各自范围的真实成交报表；未核实时经纪人可更正或撤销，已核实后的纠错撤销交由管理员。
 6. 启动 D 的两个 Python 服务，验证文案分析、历史估价与失败重试。
+
+当前组内基线及文案请求合并规则见 [TEAM_ALIGNMENT.md](TEAM_ALIGNMENT.md)。相同文案成功结果复用；30秒内处理中请求不会重复调用 Python，失败或超时可重试，接口路径与返回字段不变。

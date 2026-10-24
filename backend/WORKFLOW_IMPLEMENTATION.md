@@ -2,12 +2,14 @@
 
 依据：`housesystem.xlsx` 的 Sheet1，第二步 C2:C10、第三步 D2:D10。角色固定为 ADMIN 与 BROKER，所有后端源代码继续使用 `src/main/java/system`，业务目录内直接维护 Controller、Service、Models。
 
+本文是后端需求实现对照，部分接口还没有前端入口。2026年10月23日之后的当前演示基线与本轮修正见 [TEAM_ALIGNMENT.md](TEAM_ALIGNMENT.md)，启动与账号以 [TEAM_LOGIN.md](TEAM_LOGIN.md) 为准。
+
 ## 1. 本次实现范围
 
 | 表格部分 | 已落实的后端能力 | 对应文件 |
 | --- | --- | --- |
 | 登录与权限 | 四种账号状态、经纪人申请、独立申请凭证、拒绝后重新申请、审核历史、管理员初始化、正常账号才能登录 | auth/AuthService、RegistrationService、AuthController、AuthModels；config/SecurityConfiguration |
-| 用户与经纪人 | 审核时分配门店并创建/绑定档案、员工筛选/详情、本人资料、资料同步、启停与恢复、重置密码、旧会话撤销、员工操作日志 | system/SystemService、SystemController、SystemModels；common/AuditService |
+| 用户与经纪人 | 审核时为原broker记录分配门店、员工筛选/详情、本人资料、资料同步、启停与恢复、重置密码、旧会话撤销、员工操作日志 | system/SystemService、SystemController、SystemModels；common/AuditService |
 | 房源 | 核验状态筛选、创建时间/价格/面积排序、封面、媒体排序和数量限制、媒体变更后下架重审、上架缺失项、委托摘要、最近核验、价格和交接记录 | house/HouseService、HouseModels、MediaService、MediaController |
 | 业主 | 可见范围内重复电话提示、委托冲突、共同委托、跟进历史、最新联系计划、今日/逾期待办、管理员交接、归档限制 | owner/OwnerService、OwnerController、OwnerModels；common/FollowUpService |
 | 客源 | 重复电话提示、需求校验、逐项匹配解释、暂不跟进及原因、管理员交接、跟进计划与待办 | customer/CustomerService、CustomerController、CustomerModels |
@@ -18,24 +20,17 @@
 
 页面按钮、弹窗、跳转和输入保留由前端实现。本次提供对应的权限、状态、原因、版本号、待办列表和错误返回，不新增前端代码。C 的复杂 SQL 和 D 的模型继续由对应组员维护。
 
-## 2. 数据库升级
+## 2. 当前数据库与原字段
 
-使用 MySQL 8.0+。本次没有连接或修改本机数据库。
+当前基线为house_system_latest.sql，使用MySQL8.0+。不额外执行历史V001～V003，不再提供V004账号复制。原脚本仅保留为历史参考；当前账号改为sys_admin、broker原表，字段与编号见[TEAM_LOGIN.md](TEAM_LOGIN.md)。本次没有连接或修改数据库。
 
-1. 确认开发库已完成 V001、V002，先备份、停止后端。
-2. 执行一次 `src/main/resources/db/migration/V003__workflow_completion.sql`。不要重复执行 V001/V002/V003，不要重新导入包含 DROP 的全量文件覆盖已有业务。
-3. 查询 `backend_schema_version` 应包含 1、2、3，再启动新后端。
-4. 新库依次执行原始空库初始化、V001、V002、V003。
-
-V003 允许待审核账号暂时没有门店，增加账号状态与版本、申请会话、操作日志、媒体封面排序、联系计划、共同委托编号、成交审核状态和 AI 房源版本。旧账号由 enabled 映射 ACTIVE/DISABLED，旧共同委托每条先独立分组，旧成交根据 verified 和 verified_at 回填审核状态。房源创建时间使用原有 create_time；挂牌时间使用 listing_date，两者分别保留，不新增重复时间列。
-
-账号的 `accountStatus` 为业务状态依据。`enabled` 保留兼容，并仅由后端在 ACTIVE/非 ACTIVE 变更时同步；认证同时检查两者。前端不能直接编辑数据库。
+accountStatus是接口派生值：管理员由is_deleted决定；经纪人由audit_status与account_status共同决定。enabled为ACTIVE的兼容展示值，不是新增数据库列。申请即broker原记录，审核更新同一条记录。账号version由原资料计算，修改时回传当前值，不假设从0开始。
 
 ## 3. 注册与员工使用方式
 
 ### 3.1 初始化与注册
 
-先使用原有 bootstrap 接口初始化 ADMIN，再开放经纪人申请。注册事务与初始化共用锁，避免首位管理员尚未建立就被待审核申请占用用户表。
+当前 latest 已有管理员，直接登录即可。只有业务表与ADMIN角色齐备、sys_admin为空时才用bootstrap初始化ADMIN，再开放申请。初始化、注册、审核及账号调整共用 ADMIN 角色行锁，不依赖 sys_bootstrap，避免并发初始化或人员操作冲突。
 
 `POST /api/auth/register`：
 
@@ -60,19 +55,19 @@ V003 允许待审核账号暂时没有门店，增加账号状态与版本、申
 `PUT /api/users/{id}/review`：
 
 ```json
-{"approved":true,"storeId":"1","reason":"已核对内部员工身份","version":0}
+{"approved":true,"storeId":"1","reason":"已核对内部员工身份","version":1234567890123}
 ```
 
-通过时 storeId 必填，brokerId 可选：不传则新建档案，传入则绑定本店未绑定的旧档案。通过、门店分配和档案绑定在同一事务。拒绝用 approved=false，reason 必填，storeId/brokerId 不生效。审核需要当前 version 且账号仍 PENDING；并发重复审核不能重复创建档案。
+示例version必须替换为详情接口返回的当前值。通过时storeId必填，在原broker记录内分配；brokerId若传入必须等于该申请的broker.id，不得另绑人员。拒绝用approved=false，reason必填且最多255字。审核需要当前version且仍为PENDING，不重复新建档案；已存在门店的申请在原店审核。
 
-`GET /api/brokers?storeId=` 默认只列出已绑定正常经纪人账号的有效人员，供新业务选择。管理员使用 `unbound=true` 单独查询原始待绑定档案；这些档案需先绑定并启用账号才能接收新业务。审核通过后申请凭证失效，申请人转到普通登录入口。
+`GET /api/brokers?storeId=` 默认只列出原broker中审核通过且启用、有完整登录凭据的人员，供新业务选择。管理员使用 `unbound=true` 单独查询原始待绑定档案；这些档案需先绑定并启用账号才能接收新业务。审核通过后申请凭证失效，申请人转到普通登录入口。
 
 ### 3.4 日常账号管理
 
 - ACTIVE、DISABLED 才能由普通员工管理接口更新；PENDING/REJECTED 必须走审核，不能用 enabled=true 绕过审核。
 - `PUT /api/users/{id}` 在原有字段基础上必传 version、reason。enabled=false 为停用，true 为恢复。旧业务和操作人不删除，变更立即撤销登录与申请会话。
-- `GET/PUT /api/auth/profile` 查看/修改本人姓名、电话；PUT 必传 version，不接受角色、门店、账号状态。姓名电话同步经纪人档案。
-- `GET /api/users/{id}/logs?page=1&size=20` 为管理员查询注册、审核、资料、停用/恢复、重置密码及身份变更记录。
+- `GET/PUT /api/auth/profile` 查看/修改本人姓名、电话（管理员原表无电话，不能传非空值）；PUT 必传 version，不接受角色、门店、账号状态。姓名电话同步经纪人档案。
+- `GET /api/users/{id}/logs?page=1&size=20` 为管理员查询注册、审核、资料、停用/恢复、重置密码记录；不支持跨账号表的身份转换。
 - 始终保留一个可用管理员，不可停用自己。跨店前检查未完结业务：非成交房源、未归档业主、跟进中客户、待执行预约、未核实有效成交需先交接。已完成带看、已核实成交保留原店与执行人，不改写历史；调整门店后经纪人仅能访问新店本人数据，管理员仍可查询旧记录。
 
 ## 4. 房源、媒体和交接

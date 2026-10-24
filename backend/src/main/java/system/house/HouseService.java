@@ -87,7 +87,7 @@ public class HouseService {
                 page.page(),
                 page.size(),
                 db.list(
-                        "SELECT h.*,b.broker_name,(SELECT m.id FROM house_media m WHERE"
+                        "SELECT h.*,b.name AS broker_name,(SELECT m.id FROM house_media m WHERE"
                             + " m.house_id=h.id AND m.deleted=0 AND m.media_type='IMAGE' ORDER BY"
                             + " m.is_cover DESC,m.sort_order,m.id LIMIT 1) AS cover_media_id FROM"
                             + " house h LEFT JOIN broker b ON b.id=h.broker_id WHERE "

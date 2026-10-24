@@ -5,6 +5,7 @@ import static system.common.DataStore.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import system.auth.AccountStore;
 import system.security.AccessScope;
 
 import java.time.*;
@@ -14,10 +15,12 @@ import java.util.*;
 public class TaskService {
     private final DataStore db;
     private final AccessScope scope;
+    private final AccountStore accounts;
 
-    public TaskService(DataStore db, AccessScope scope) {
+    public TaskService(DataStore db, AccessScope scope, AccountStore accounts) {
         this.db = db;
         this.scope = scope;
+        this.accounts = accounts;
     }
 
     @Transactional(readOnly = true)
@@ -63,7 +66,7 @@ public class TaskService {
                                                     + " r.appointment_time<#{p.now}";
                                     case "SHOWING_RECONTACT" ->
                                             " AND r.status='COMPLETED' AND"
-                                                + " r.next_contact_at<#{p.tomorrow}";
+                                                    + " r.next_contact_at<#{p.tomorrow}";
                                     default ->
                                             " AND r.status='COMPLETED' AND NOT EXISTS(SELECT 1 FROM"
                                                 + " showing_follow_up f WHERE f.showing_id=r.id)";
@@ -81,21 +84,7 @@ public class TaskService {
             }
             case "REGISTRATION" -> {
                 if (!scope.user().administrator()) throw new BusinessException(403, "仅管理员可查看注册申请");
-                String from = " FROM sys_user WHERE account_status='PENDING'";
-                return args(
-                        "total",
-                        db.count("SELECT COUNT(*) AS value" + from, p),
-                        "page",
-                        page,
-                        "size",
-                        size,
-                        "records",
-                        db.list(
-                                "SELECT"
-                                    + " id,username,display_name,phone,account_status,created_at,version"
-                                        + from
-                                        + " ORDER BY id LIMIT #{p.size} OFFSET #{p.offset}",
-                                p));
+                return accounts.list(null, null, "PENDING", page, size);
             }
             default -> throw new BusinessException(400, "待办类型无效");
         }

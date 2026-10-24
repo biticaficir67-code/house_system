@@ -1,0 +1,7 @@
+# 历史脚本说明
+
+本目录V001～V003属于旧sys_user账号方案，仅保留作历史参考，不能用于当前直接读取sys_admin/broker的后端。V004及旧账号复制服务已移除。
+
+当前协作数据库结构以队员database/house_system_latest.sql为准；已经导入latest的库无需再运行本目录脚本。后端没有配置自动迁移；本轮不执行任何SQL。旧V001的auth_session带sys_user外键，与当前会话写入方式不兼容。
+
+本版不读取sys_user、sys_user_role或application_session。现存历史表不在本次删除，避免破坏外键、历史记录或其他服务。字段及账号编号见backend/TEAM_LOGIN.md；旧数据库需单独核对结构和数据后制定升级方案。

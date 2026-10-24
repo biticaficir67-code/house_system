@@ -1,3 +1,4 @@
+-- HISTORICAL ONLY: obsolete sys_user account model; do not run with current direct-account backend. See README.md.
 -- MySQL 8.0+; run after V001, with the application stopped and a database backup.
 -- Applies to both fresh V001 installs and the previous five-role V001.
 -- Existing ADMIN users remain administrators. Every other existing user becomes BROKER.

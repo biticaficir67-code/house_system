@@ -28,6 +28,12 @@ public class HouseController {
         return ApiResponse.success(service.detail(id));
     }
 
+    @GetMapping("/{id}/readiness")
+    @PreAuthorize("hasAuthority('house:read')")
+    public ApiResponse<?> readiness(@PathVariable long id) {
+        return ApiResponse.success(service.readiness(id));
+    }
+
     @PostMapping
     @PreAuthorize("hasAuthority('house:write')")
     public ApiResponse<?> create(@Valid @RequestBody HouseModels.Write body) {
@@ -37,7 +43,7 @@ public class HouseController {
     @PutMapping("/{id}")
     @PreAuthorize("hasAuthority('house:write')")
     public ApiResponse<?> update(
-            @PathVariable long id, @Valid @RequestBody HouseModels.Write body) {
+            @PathVariable long id, @RequestBody java.util.Map<String, Object> body) {
         return ApiResponse.success(service.update(id, body));
     }
 

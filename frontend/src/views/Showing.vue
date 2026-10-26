@@ -141,6 +141,8 @@ export default {
       houseList: [],
       customerList: [],
       brokerList: [],
+      initialized: false,
+      prefillKey: '',
       page: 1,
       size: 20,
       total: 0,
@@ -193,6 +195,9 @@ export default {
   },
   created() {
     this.init()
+  },
+  watch: {
+    '$route.query': { handler() { if (this.initialized) this.prefillFromRoute() }, deep: true }
   },
   methods: {
     errMsg(err) {
@@ -285,7 +290,7 @@ export default {
     // 同时拉带看、房源、客户，用来显示姓名和小区
     init() {
       var that = this
-      Promise.all([
+      return Promise.all([
         this.loadPages('/showings'),
         this.loadPages('/houses'),
         this.loadPages('/customers'),
@@ -317,6 +322,8 @@ export default {
         })
         that.allRows = shows
         that.applyFilter()
+        that.initialized = true
+        that.prefillFromRoute()
       }).catch(function (err) {
         that.$alert(that.errMsg(err), { confirmButtonText: '确定' })
       })
@@ -342,6 +349,26 @@ export default {
         remark: ''
       }
       this.formVisible = true
+    },
+    prefillFromRoute() {
+      const q = this.$route.query
+      if (!q.houseId || !q.customerId) { this.prefillKey = ''; return }
+      const key = [q.houseId, q.customerId, q.brokerId || ''].join(':')
+      if (this.prefillKey === key) return
+      this.prefillKey = key
+      const house = this.saleHouses.find(h => String(h.id) === String(q.houseId))
+      const customer = this.customerList.find(c => String(c.id) === String(q.customerId) && c.status === 'ACTIVE')
+      if (!house || !customer || String(house.storeId) !== String(customer.storeId)) {
+        this.$message.warning('房源或客户的状态、门店已变化，请重新选择带看对象')
+        return
+      }
+      this.openAdd()
+      this.form.houseId = house.id
+      this.form.customerId = customer.id
+      const broker = this.formBrokers.find(b => String(b.id) === String(q.brokerId || customer.brokerId))
+      this.form.brokerId = broker ? broker.id : ''
+      this.form.remark = '根据客户需求推荐预约带看'
+      this.$message.info('已带入推荐房源和客户，请选择预约时间后确认')
     },
     // 改期要带 version，避免两人同时改冲突
     openEdit(row) {
@@ -387,9 +414,9 @@ export default {
           })
         } else {
           req = this.$axios.post('/showings', {
-            houseId: Number(this.form.houseId),
-            customerId: Number(this.form.customerId),
-            brokerId: Number(this.form.brokerId),
+            houseId: this.form.houseId,
+            customerId: this.form.customerId,
+            brokerId: this.form.brokerId,
             appointmentTime: this.form.appointmentTime,
             remark: this.form.remark
           })

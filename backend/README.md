@@ -6,6 +6,8 @@ Spring Boot 3.5、Java 17、Spring Security、MyBatis、MySQL 8.0+。所有 Java
 
 ## 当前组内进度
 
+2026-10-26 新增业务 Excel/CSV 导入、房源图片管理、上架检查，以及可解释客户匹配/房源对比/预约联动，修正房源编辑、地图提示和申请审核入口。操作步骤及边界见 [本轮功能说明](FEATURE_UPDATE.md)。
+
 已合并队员新增的自定义报表接口；兼容调整和新上传全量 SQL 的使用边界见 [队员报表合并说明](TEAM_REPORT_INTEGRATION.md)。
 
 已按10月22日晚之后的组内讨论对齐当前 main 与最新演示底稿，见 [本轮后端对齐说明](TEAM_ALIGNMENT.md)。当前账号直接使用 sys_admin、broker 原字段，不再复制到 sys_user；登录步骤见 [组员登录联调](TEAM_LOGIN.md)。

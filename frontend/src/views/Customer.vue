@@ -13,6 +13,7 @@
         <el-form-item>
           <el-button @click="search">查询</el-button>
           <el-button type="primary" @click="openAdd">新增客户</el-button>
+          <el-button @click="importVisible = true">表格导入</el-button>
         </el-form-item>
       </el-form>
       <el-table :data="tableData" stripe border>
@@ -24,8 +25,9 @@
             <span :class="scope.row.status === 'ACTIVE' ? 'st-on' : (scope.row.status === 'DEAL' ? 'st-ok' : 'st-off')">{{ scope.row.status }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200">
+        <el-table-column label="操作" width="320">
           <template #default="scope">
+            <el-button size="small" type="primary" @click="workspaceId = scope.row.id">需求与匹配</el-button>
             <el-button size="small" type="warning" @click="openEdit(scope.row)">修改</el-button>
             <el-button size="small" type="info" @click="del(scope.row)">删除</el-button>
           </template>
@@ -36,8 +38,13 @@
     <el-dialog :title="formTitle" v-model="formVisible" width="460px">
       <el-form ref="form" :model="form" :rules="rules" label-width="100px">
         <el-form-item label="门店" prop="storeId">
-          <el-select v-model="form.storeId" placeholder="请选择门店" style="width:100%">
+          <el-select v-model="form.storeId" placeholder="请选择门店" style="width:100%" :disabled="!isAdmin || isEdit" @change="storeChanged">
             <el-option v-for="s in stores" :key="s.id" :label="s.name" :value="s.id"></el-option>
+          </el-select>
+        </el-form-item>
+        <el-form-item label="负责人" prop="brokerId">
+          <el-select v-model="form.brokerId" placeholder="请选择负责经纪人" style="width:100%" :disabled="!isAdmin || isEdit">
+            <el-option v-for="b in formBrokers" :key="b.id" :label="b.brokerName || b.name" :value="b.id"></el-option>
           </el-select>
         </el-form-item>
         <el-form-item label="姓名" prop="name">
@@ -45,6 +52,11 @@
         </el-form-item>
         <el-form-item label="电话" prop="phone">
           <el-input v-model="form.phone"></el-input>
+        </el-form-item>
+        <el-form-item label="标签">
+          <el-select v-model="form.tags" multiple filterable allow-create style="width:100%" placeholder="选填，可输入标签">
+            <el-option v-for="tag in tagOptions" :key="tag" :label="tag" :value="tag"></el-option>
+          </el-select>
         </el-form-item>
         <el-form-item label="备注">
           <el-input type="textarea" v-model="form.remark"></el-input>
@@ -55,17 +67,25 @@
         </el-form-item>
       </el-form>
     </el-dialog>
+    <CustomerWorkspace v-if="workspaceId" :customer-id="workspaceId" @closed="workspaceId = ''" @changed="init" />
+    <BusinessImportDialog v-if="importVisible" v-model="importVisible" initial-kind="CUSTOMER" @imported="init" />
   </div>
 </template>
 <script>
 import NavMain from '@/components/NavMain.vue'
+import CustomerWorkspace from '@/components/CustomerWorkspace.vue'
+import BusinessImportDialog from '@/components/BusinessImportDialog.vue'
 // 客源资料，管理员要选门店
 export default {
   name: 'Customer',
-  components: { NavMain },
+  components: { NavMain, CustomerWorkspace, BusinessImportDialog },
   data() {
     return {
       searchForm: { keyword: '' },
+      importVisible: this.$route.query.import === '1',
+      workspaceId: '',
+      formBrokers: [],
+      tagOptions: ['首套刚需', '改善置换', '投资关注', '自住', '有电梯', '近期购房', '长期跟进'],
       tableData: [],
       page: 1,
       size: 20,
@@ -77,6 +97,7 @@ export default {
       stores: [],
       rules: {
         storeId: [{ required: true, message: '请选择门店', trigger: 'change' }],
+        brokerId: [{ validator: (_rule, value, done) => !this.isEdit && !value ? done(new Error('请选择负责经纪人')) : done(), trigger: 'change' }],
         name: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
         phone: [{ required: true, message: '请输入电话', trigger: 'blur' }]
       }
@@ -91,7 +112,22 @@ export default {
     this.loadStores()
     this.init()
   },
+  watch: {
+    '$route.query.import'(value) { if (value === '1') this.importVisible = true }
+  },
   methods: {
+    storeChanged() {
+      this.form.brokerId = this.isAdmin ? '' : this.$store.state.brokerId
+      this.loadFormBrokers()
+    },
+    async loadFormBrokers() {
+      if (!this.form.storeId) { this.formBrokers = []; return }
+      const store = this.form.storeId
+      try {
+        const response = await this.$axios.get('/brokers', { params: { storeId: store } })
+        if (String(store) === String(this.form.storeId)) this.formBrokers = response.data.data || []
+      } catch (error) { this.$message.error(this.errMsg(error)) }
+    },
     // 新增时下拉门店
     loadStores() {
       this.$axios.get('/stores').then((res) => {
@@ -130,8 +166,11 @@ export default {
       this.isEdit = false
       this.formTitle = '新增客户'
       this.form = {
-        storeId: this.isAdmin ? (this.stores[0] ? this.stores[0].id : '') : this.$store.state.storeId
+        storeId: this.isAdmin ? (this.stores[0] ? this.stores[0].id : '') : this.$store.state.storeId,
+        brokerId: this.isAdmin ? '' : this.$store.state.brokerId,
+        tags: []
       }
+      this.loadFormBrokers()
       this.formVisible = true
     },
     openEdit(row) {
@@ -139,6 +178,8 @@ export default {
       this.formTitle = '修改客户'
       this.$axios.get('/customers/' + row.id).then((res) => {
         this.form = Object.assign({}, res.data.data || row)
+        this.form.tags = [...(this.form.tags || [])]
+        this.loadFormBrokers()
         this.formVisible = true
       }).catch((err) => {
         this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
@@ -155,7 +196,9 @@ export default {
           name: this.form.name,
           phone: this.form.phone,
           remark: this.form.remark,
-          storeId: this.form.storeId ? Number(this.form.storeId) : null,
+          storeId: this.form.storeId || null,
+          brokerId: this.form.brokerId || null,
+          tags: this.form.tags || [],
           version: this.form.version
         }
         var req = this.isEdit

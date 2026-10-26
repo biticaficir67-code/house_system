@@ -20,18 +20,21 @@ public class HouseService {
     private final ResourceAccess access;
     private final ApplicationEventPublisher events;
     private final AuditService audit;
+    private final Payloads payloads;
 
     public HouseService(
             DataStore db,
             AccessScope scope,
             ResourceAccess access,
             ApplicationEventPublisher events,
-            AuditService audit) {
+            AuditService audit,
+            Payloads payloads) {
         this.db = db;
         this.scope = scope;
         this.access = access;
         this.events = events;
         this.audit = audit;
+        this.payloads = payloads;
     }
 
     public PageResponse<Map<String, Object>> search(HouseModels.Search search) {
@@ -260,6 +263,19 @@ public class HouseService {
 
     @Transactional
     public Map<String, Object> create(HouseModels.Write b) {
+        return create(b, true);
+    }
+
+    public void validateImport(HouseModels.Write b) {
+        values(b);
+    }
+
+    @Transactional
+    public Map<String, Object> createImported(HouseModels.Write b) {
+        return create(b, false);
+    }
+
+    private Map<String, Object> create(HouseModels.Write b, boolean analyze) {
         long store = scope.store(b.storeId());
         Long broker = scope.broker(b.brokerId());
         access.store(store);
@@ -276,7 +292,7 @@ public class HouseService {
                         "verification_status",
                         "PENDING",
                         "source",
-                        "MANUAL",
+                        analyze ? "MANUAL" : "IMPORT",
                         "data_origin",
                         "BUSINESS",
                         "version",
@@ -285,8 +301,39 @@ public class HouseService {
                         false));
         long id = db.insert("house", values);
         log(id, null, "OFF", "CREATE", "录入房源，待核验", store);
-        events.publishEvent(new HouseModels.Changed(id, scope.user().id()));
+        if (analyze) events.publishEvent(new HouseModels.Changed(id, scope.user().id()));
         return detail(id);
+    }
+
+    @Transactional
+    public Map<String, Object> update(long id, Map<String, Object> request) {
+        var old = access.get("house", id, true);
+        var values = new LinkedHashMap<String, Object>(request);
+        // Omitted optional fields are preserved; explicit null still clears a nullable field.
+        for (String field :
+                List.of(
+                        "businessArea",
+                        "communityId",
+                        "longitude",
+                        "latitude",
+                        "rooms",
+                        "halls",
+                        "bathrooms",
+                        "hasElevator",
+                        "buildingType",
+                        "layoutStructure",
+                        "constructionStructure",
+                        "ownershipType",
+                        "internalAreaSqm",
+                        "listingDate",
+                        "listingPriceYuan",
+                        "coreSelling",
+                        "communityIntro",
+                        "surrounding",
+                        "sourceListingId")) {
+            if (!values.containsKey(field)) values.put(field, old.get(field));
+        }
+        return update(id, payloads.read(values, HouseModels.Write.class));
     }
 
     @Transactional
@@ -336,6 +383,116 @@ public class HouseService {
             throw new BusinessException(409, "记录已被修改，请刷新后重试");
     }
 
+    public Map<String, Object> readiness(long id) {
+        var row = access.get("house", id, false);
+        var checks = publicationChecks(row);
+        long passed = checks.stream().filter(x -> Boolean.TRUE.equals(x.get("passed"))).count();
+        var missing =
+                checks.stream()
+                        .filter(x -> !Boolean.TRUE.equals(x.get("passed")))
+                        .map(x -> x.get("label"))
+                        .toList();
+        return args(
+                "houseId",
+                id,
+                "version",
+                row.get("version"),
+                "checks",
+                checks,
+                "completionPercent",
+                Math.round(passed * 100.0 / checks.size()),
+                "missing",
+                missing,
+                "canPublish",
+                missing.isEmpty() && "OFF".equals(row.get("status")),
+                "status",
+                row.get("status"));
+    }
+
+    private List<Map<String, Object>> publicationChecks(Map<String, Object> row) {
+        var checks = new ArrayList<Map<String, Object>>();
+        String[] fields = {
+            "communityName", "district", "buildingAreaSqm", "rooms", "halls", "bathrooms"
+        };
+        String[] labels = {"小区名称", "所在区域", "建筑面积", "室数", "厅数", "卫数"};
+        for (int i = 0; i < fields.length; i++) {
+            Object value = row.get(fields[i]);
+            boolean valid = value != null && (!(value instanceof String text) || !text.isBlank());
+            if (value instanceof Number number) {
+                valid =
+                        fields[i].equals("halls") || fields[i].equals("bathrooms")
+                                ? number.doubleValue() >= 0
+                                : number.doubleValue() > 0;
+            }
+            checks.add(args("key", fields[i], "label", labels[i], "passed", valid));
+        }
+        checks.add(
+                args(
+                        "key",
+                        "listingPriceYuan",
+                        "label",
+                        "大于零的挂牌价格",
+                        "passed",
+                        row.get("listingPriceYuan") instanceof Number price
+                                && price.doubleValue() > 0));
+        checks.add(
+                args(
+                        "key",
+                        "verificationStatus",
+                        "label",
+                        "管理员核验通过",
+                        "passed",
+                        "VERIFIED".equals(row.get("verificationStatus"))));
+        checks.add(
+                args(
+                        "key",
+                        "images",
+                        "label",
+                        "至少一张图片",
+                        "passed",
+                        db.count(
+                                        "SELECT COUNT(*) AS value FROM house_media WHERE"
+                                            + " house_id=#{p.id} AND media_type='IMAGE' AND"
+                                            + " deleted=0",
+                                        args("id", row.get("id")))
+                                > 0));
+        checks.add(
+                args(
+                        "key",
+                        "storeId",
+                        "label",
+                        "启用的所属门店",
+                        "passed",
+                        row.get("storeId") != null
+                                && db.count(
+                                                "SELECT COUNT(*) AS value FROM store WHERE"
+                                                    + " id=#{p.id} AND enabled=1",
+                                                args("id", row.get("storeId")))
+                                        == 1));
+        checks.add(
+                args(
+                        "key",
+                        "brokerId",
+                        "label",
+                        "已审核且启用的负责经纪人",
+                        "passed",
+                        row.get("brokerId") != null
+                                && db.count(
+                                                "SELECT COUNT(*) AS value FROM broker WHERE"
+                                                    + " id=#{p.id} AND store_id=#{p.store} AND"
+                                                    + " audit_status=1 AND account_status=1 AND"
+                                                    + " TRIM(username)<>'' AND TRIM(password)<>''"
+                                                    + " AND EXISTS(SELECT 1 FROM sys_role WHERE"
+                                                    + " code='BROKER' AND enabled=1)",
+                                                args(
+                                                        "id",
+                                                        row.get("brokerId"),
+                                                        "store",
+                                                        row.get("storeId")))
+                                        == 1));
+        return checks;
+    }
+
     @Transactional
     public Map<String, Object> status(long id, HouseModels.StatusChange b) {
         Checks.choice(b.status(), "ON_SALE", "OFF");
@@ -344,28 +501,11 @@ public class HouseService {
         Checks.require(!"DEAL".equals(old.get("status")), "成交状态只能通过成交记录流转");
         Checks.require(!Objects.equals(old.get("status"), b.status()), "房源已处于该状态");
         if ("ON_SALE".equals(b.status())) {
-            var missing = new ArrayList<String>();
-            if (old.get("storeId") == null) missing.add("所属门店");
-            if (old.get("brokerId") == null) missing.add("负责经纪人");
-            if (!(old.get("listingPriceYuan") instanceof Number price) || price.doubleValue() <= 0)
-                missing.add("大于零的挂牌价格");
-            if (!"VERIFIED".equals(old.get("verificationStatus"))) missing.add("核验通过");
-            for (String field :
-                    List.of(
-                            "communityName",
-                            "district",
-                            "buildingAreaSqm",
-                            "rooms",
-                            "halls",
-                            "bathrooms"))
-                if (old.get(field) == null
-                        || old.get(field) instanceof String text && text.isBlank())
-                    missing.add(field);
-            if (db.count(
-                            "SELECT COUNT(*) AS value FROM house_media WHERE house_id=#{p.id} AND"
-                                    + " media_type='IMAGE' AND deleted=0",
-                            args("id", id))
-                    == 0) missing.add("至少一张图片");
+            var missing =
+                    publicationChecks(old).stream()
+                            .filter(x -> !Boolean.TRUE.equals(x.get("passed")))
+                            .map(x -> x.get("label").toString())
+                            .toList();
             Checks.require(missing.isEmpty(), "上架缺少：" + String.join("、", missing));
             access.store(id(old, "storeId"));
             access.broker(

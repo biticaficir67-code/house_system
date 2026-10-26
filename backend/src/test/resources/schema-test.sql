@@ -2,6 +2,14 @@ CREATE TABLE broker (
 
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '经纪人主键ID',
   `broker_name` varchar(64) NOT NULL COMMENT '经纪人姓名',
+  name VARCHAR(64) NOT NULL,
+  username VARCHAR(50) NOT NULL UNIQUE,
+  password VARCHAR(100) NOT NULL,
+  audit_status TINYINT NOT NULL DEFAULT 0,
+  reject_reason VARCHAR(255),
+  account_status TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `phone` varchar(32) DEFAULT NULL COMMENT '联系电话',
   `dept` varchar(64) DEFAULT NULL COMMENT '所属门店/部门',
   `create_time` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
@@ -139,20 +147,22 @@ CREATE TABLE IF NOT EXISTS sys_role (
  id BIGINT PRIMARY KEY AUTO_INCREMENT, code VARCHAR(32) NOT NULL UNIQUE, name VARCHAR(64) NOT NULL,
  permissions LONGTEXT NOT NULL, data_scope VARCHAR(16) NOT NULL, enabled BOOLEAN NOT NULL DEFAULT TRUE
 );
-CREATE TABLE IF NOT EXISTS sys_user (
- id BIGINT PRIMARY KEY AUTO_INCREMENT, username VARCHAR(64) NOT NULL UNIQUE, password_hash VARCHAR(100) NOT NULL,
- display_name VARCHAR(64) NOT NULL, phone VARCHAR(32), store_id BIGINT NOT NULL, broker_id BIGINT UNIQUE,
- enabled BOOLEAN NOT NULL DEFAULT TRUE, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
- FOREIGN KEY(store_id) REFERENCES store(id), FOREIGN KEY(broker_id) REFERENCES broker(id)
+CREATE TABLE sys_admin (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, username VARCHAR(50) NOT NULL UNIQUE,
+ password VARCHAR(100) NOT NULL, admin_name VARCHAR(50) NOT NULL,
+ create_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+ update_time DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+ is_deleted TINYINT DEFAULT 0
 );
-CREATE TABLE IF NOT EXISTS sys_user_role (
- user_id BIGINT NOT NULL, role_id BIGINT NOT NULL, PRIMARY KEY(user_id,role_id),
- FOREIGN KEY(user_id) REFERENCES sys_user(id), FOREIGN KEY(role_id) REFERENCES sys_role(id)
+CREATE TABLE sys_oper_log (
+ id BIGINT PRIMARY KEY AUTO_INCREMENT, operator_id BIGINT NOT NULL, operator_type TINYINT NOT NULL,
+ operate_type VARCHAR(50) NOT NULL, target_id BIGINT NOT NULL, content VARCHAR(500),
+ operate_time DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS auth_session (
  id BIGINT PRIMARY KEY AUTO_INCREMENT, token_hash VARCHAR(64) NOT NULL UNIQUE, user_id BIGINT NOT NULL,
  expires_at DATETIME NOT NULL, revoked BOOLEAN NOT NULL DEFAULT FALSE, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
- FOREIGN KEY(user_id) REFERENCES sys_user(id), KEY idx_session_user(user_id,revoked,expires_at)
+ KEY idx_session_user(user_id,revoked,expires_at)
 );
 CREATE TABLE IF NOT EXISTS house_media (
  id BIGINT PRIMARY KEY AUTO_INCREMENT, house_id BIGINT NOT NULL, media_type VARCHAR(16) NOT NULL,
@@ -240,12 +250,6 @@ INSERT INTO sys_role(code,name,data_scope,permissions) SELECT 'BROKER','经纪�
 INSERT INTO backend_schema_version(version) VALUES(1);
 
 -- V003 fixture columns (H2 syntax; real MySQL uses the versioned migration).
-ALTER TABLE sys_user ALTER COLUMN store_id DROP NOT NULL;
-ALTER TABLE sys_user ADD COLUMN account_status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE';
-ALTER TABLE sys_user ADD COLUMN review_reason VARCHAR(500);
-ALTER TABLE sys_user ADD COLUMN reviewed_by BIGINT;
-ALTER TABLE sys_user ADD COLUMN reviewed_at DATETIME;
-ALTER TABLE sys_user ADD COLUMN version BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE house_media ADD COLUMN is_cover BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE house_media ADD COLUMN sort_order INT NOT NULL DEFAULT 0;
 ALTER TABLE owner ADD COLUMN next_contact_at DATETIME;
@@ -255,11 +259,6 @@ ALTER TABLE house_show ADD COLUMN next_contact_at DATETIME;
 ALTER TABLE owner_entrustment ADD COLUMN agreement_id BIGINT;
 ALTER TABLE house_deal ADD COLUMN verification_status VARCHAR(16) NOT NULL DEFAULT 'PENDING';
 ALTER TABLE ai_request_log ADD COLUMN house_version BIGINT;
-CREATE TABLE application_session (
- id BIGINT PRIMARY KEY AUTO_INCREMENT, user_id BIGINT NOT NULL, token_hash VARCHAR(64) NOT NULL UNIQUE,
- expires_at DATETIME NOT NULL, revoked BOOLEAN NOT NULL DEFAULT FALSE,
- FOREIGN KEY(user_id) REFERENCES sys_user(id)
-);
 CREATE TABLE operation_log (
  id BIGINT PRIMARY KEY AUTO_INCREMENT, resource_type VARCHAR(32) NOT NULL, resource_id BIGINT NOT NULL,
  event_type VARCHAR(32) NOT NULL, actor_id BIGINT, reason VARCHAR(500),

@@ -25,13 +25,14 @@ public final class CustomerModels {
 
     public record Demand(
             @Size(max = 20) List<@NotBlank @Size(max = 32) String> districts,
-            @DecimalMin("0") BigDecimal minPrice,
-            @DecimalMin("0") BigDecimal maxPrice,
-            @DecimalMin("0") BigDecimal minArea,
-            @DecimalMin("0") BigDecimal maxArea,
-            @Min(1) Integer minRooms,
-            @Min(1) Integer maxRooms,
+            @DecimalMin("0") @Digits(integer = 14, fraction = 2) BigDecimal minPrice,
+            @DecimalMin("0") @Digits(integer = 14, fraction = 2) BigDecimal maxPrice,
+            @DecimalMin("0") @Digits(integer = 8, fraction = 2) BigDecimal minArea,
+            @DecimalMin("0") @Digits(integer = 8, fraction = 2) BigDecimal maxArea,
+            @Min(1) @Max(50) Integer minRooms,
+            @Min(1) @Max(50) Integer maxRooms,
             String decoration,
             LocalDate expectedPurchaseDate,
-            @Size(max = 5000) String notes) {}
+            @Size(max = 5000) String notes,
+            @Min(0) Long version) {}
 }

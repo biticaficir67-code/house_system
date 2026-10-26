@@ -17,6 +17,7 @@
         <el-form-item>
           <el-button @click="search">查询</el-button>
           <el-button type="primary" @click="openAdd">新增房源</el-button>
+          <el-button @click="importVisible = true">表格导入</el-button>
           <el-button @click="goMap">房源地图</el-button>
         </el-form-item>
       </el-form>
@@ -142,6 +143,8 @@
         <el-form-item label="挂牌价(元)" prop="listingPriceYuan">
           <el-input v-model="form.listingPriceYuan"></el-input>
         </el-form-item>
+        <el-form-item label="挂牌日期"><el-date-picker v-model="form.listingDate" type="date" value-format="YYYY-MM-DD" placeholder="选择挂牌日期" /></el-form-item>
+        <el-form-item label="电梯"><el-select v-model="form.hasElevator" clearable placeholder="未知"><el-option label="有电梯" :value="true" /><el-option label="无电梯" :value="false" /></el-select></el-form-item>
         <el-form-item label="核心卖点">
           <el-input type="textarea" v-model="form.coreSelling" rows="2"></el-input>
         </el-form-item>
@@ -160,6 +163,12 @@
 
     <!-- 详情里展示入库后的文案智能分析结果 -->
     <el-dialog title="房源详情" v-model="detailVisible" width="70%">
+      <div v-if="readiness && current.status !== 'DEAL'" class="readiness-card">
+        <div class="readiness-title"><strong>上架检查</strong><span>{{ readiness.completionPercent }}% 已完成</span></div>
+        <el-progress :percentage="readiness.completionPercent" :stroke-width="7" />
+        <div class="readiness-tags"><el-tag v-for="check in readiness.checks" :key="check.key" :type="check.passed ? 'success' : 'info'" size="small">{{ check.passed ? '✓' : '待补' }} {{ check.label }}</el-tag></div>
+        <p>{{ readiness.missing.length ? '下一步：'+readiness.missing.join('、') : '上架条件已齐备' }}</p>
+      </div>
       <el-descriptions :column="2" border>
         <el-descriptions-item label="小区">{{ current.communityName }}</el-descriptions-item>
         <el-descriptions-item label="区域">{{ current.district }}</el-descriptions-item>
@@ -168,6 +177,7 @@
         <el-descriptions-item label="状态">{{ statusText(current.status) }}</el-descriptions-item>
         <el-descriptions-item label="核验">{{ current.verificationStatus }}</el-descriptions-item>
       </el-descriptions>
+      <HouseMedia v-if="detailVisible && current.id" :key="current.id" :house-id="current.id" :media="current.media || []" :version="current.version" :readonly="current.status === 'DEAL'" :refresh="reloadCurrent" />
       <p class="slot-title">核心卖点</p>
       <p>{{ current.coreSelling }}</p>
       <p class="slot-title">小区介绍</p>
@@ -182,18 +192,23 @@
       </div>
       <el-button type="primary" style="margin-top:8px" @click="retryAi">重新分析</el-button>
     </el-dialog>
+    <BusinessImportDialog v-if="importVisible" v-model="importVisible" initial-kind="HOUSE" @imported="imported" />
   </div>
 </template>
 <script>
 import NavMain from '@/components/NavMain.vue'
+import BusinessImportDialog from '@/components/BusinessImportDialog.vue'
+import HouseMedia from '@/components/HouseMedia.vue'
+import { nullableNumber } from '@/business'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 // 房源列表 + 小区地图，保存后请求文案分析
 export default {
   name: 'House',
-  components: { NavMain },
+  components: { NavMain, HouseMedia, BusinessImportDialog },
   data() {
     return {
+      importVisible: this.$route.query.import === '1',
       searchForm: { communityName: '', district: '' },
       tableData: [],
       allHouses: [],
@@ -205,6 +220,7 @@ export default {
       formTitle: '新增房源',
       isEdit: false,
       current: {},
+      readiness: null,
       ai: { advantages: [], disadvantages: [] },
       stores: [],
       brokers: [],
@@ -246,7 +262,11 @@ export default {
       this.map = null
     }
   },
+  watch: {
+    '$route.query.import'(value) { if (value === '1') this.importVisible = true }
+  },
   methods: {
+    imported() { this.init(); this.loadAllHouses() },
     // 取出后端返回的提示文字
     errMsg(err) {
       if (err.response && err.response.data && err.response.data.message) return err.response.data.message
@@ -427,7 +447,9 @@ export default {
           fillColor: that.pinColor(g),
           fillOpacity: 0.92
         })
-        marker.bindTooltip(g.name + '（' + n + '套）', { direction: 'top', offset: [0, -8] })
+        const tooltip = document.createElement('span')
+        tooltip.textContent = g.name + '（' + n + '套）'
+        marker.bindTooltip(tooltip, { direction: 'top', offset: [0, -8] })
         marker.on('click', function () {
           that.map.setView([g.lat, g.lng], 15)
         })
@@ -655,25 +677,33 @@ export default {
         city: f.city,
         district: f.district,
         communityName: f.communityName,
-        buildingAreaSqm: Number(f.buildingAreaSqm),
-        rooms: f.rooms ? Number(f.rooms) : null,
-        halls: f.halls ? Number(f.halls) : null,
-        bathrooms: f.bathrooms ? Number(f.bathrooms) : null,
+        buildingAreaSqm: nullableNumber(f.buildingAreaSqm),
+        rooms: nullableNumber(f.rooms),
+        halls: nullableNumber(f.halls),
+        bathrooms: nullableNumber(f.bathrooms),
         floorLevel: f.floorLevel,
-        totalFloors: Number(f.totalFloors),
+        totalFloors: nullableNumber(f.totalFloors),
         orientation: f.orientation,
         decoration: f.decoration,
-        hasElevator: f.hasElevator,
+        hasElevator: f.hasElevator === '' ? null : f.hasElevator,
         propertyUsage: f.propertyUsage,
-        listingPriceYuan: f.listingPriceYuan ? Number(f.listingPriceYuan) : null,
+        listingPriceYuan: nullableNumber(f.listingPriceYuan),
         listingDate: f.listingDate,
         coreSelling: f.coreSelling,
         communityIntro: f.communityIntro,
         surrounding: f.surrounding,
-        storeId: f.storeId ? Number(f.storeId) : null,
-        brokerId: f.brokerId ? Number(f.brokerId) : null,
-        longitude: f.longitude ? Number(f.longitude) : null,
-        latitude: f.latitude ? Number(f.latitude) : null,
+        storeId: f.storeId || null,
+        brokerId: f.brokerId || null,
+        longitude: nullableNumber(f.longitude),
+        latitude: nullableNumber(f.latitude),
+        businessArea: f.businessArea,
+        communityId: f.communityId,
+        buildingType: f.buildingType,
+        layoutStructure: f.layoutStructure,
+        constructionStructure: f.constructionStructure,
+        ownershipType: f.ownershipType,
+        internalAreaSqm: f.internalAreaSqm,
+        sourceListingId: f.sourceListingId,
         version: f.version
       }
     },
@@ -694,17 +724,11 @@ export default {
               that.$alert(res.data.message, { confirmButtonText: '确定' })
               return
             }
-            var id = (res.data.data && res.data.data.id) || that.form.id
             that.$alert(that.isEdit ? '修改成功' : '添加成功', { confirmButtonText: '确定' })
             that.formVisible = false
-            // 保存后立刻跑文案分析，列表标签才能跟上
-            that.$axios.post('/ai/houses/' + id + '/text-analysis').then(() => {
-              that.init()
-              that.loadAllHouses()
-            }).catch(() => {
-              that.init()
-              that.loadAllHouses()
-            })
+            // 后端在事务提交后分析，页面不重复触发相同文案请求。
+            that.init()
+            that.loadAllHouses()
           }).catch((err) => {
             that.$alert(that.errMsg(err), { confirmButtonText: '确定' })
           })
@@ -712,19 +736,26 @@ export default {
       })
     },
     // 详情里读已保存的文案分析结果
-    openDetail(row) {
-      this.$axios.get('/houses/' + row.id).then((res) => {
-        this.current = res.data.data || {}
-        var a = this.current.textAnalysis || {}
-        this.ai = {
-          summary: a.summary,
-          advantages: this.asList(a.advantages),
-          disadvantages: this.asList(a.disadvantages)
-        }
+    async openDetail(row) {
+      try {
+        const [house, checks] = await Promise.all([this.$axios.get('/houses/' + row.id), this.$axios.get('/houses/' + row.id + '/readiness')])
+        this.current = house.data.data || {}
+        this.readiness = checks.data.data
+        const analysis = this.current.textAnalysis || {}
+        this.ai = { summary: analysis.summary, advantages: this.asList(analysis.advantages), disadvantages: this.asList(analysis.disadvantages) }
         this.detailVisible = true
-      }).catch((err) => {
-        this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
-      })
+      } catch (error) { this.$alert(this.errMsg(error), { confirmButtonText: '确定' }) }
+    },
+    async reloadCurrent() {
+      const id = this.current.id
+      const [house, checks] = await Promise.all([this.$axios.get('/houses/' + id), this.$axios.get('/houses/' + id + '/readiness')])
+      if (String(this.current.id) !== String(id)) return
+      this.current = house.data.data
+      this.readiness = checks.data.data
+      const analysis = this.current.textAnalysis || {}
+      this.ai = { summary: analysis.summary, advantages: this.asList(analysis.advantages), disadvantages: this.asList(analysis.disadvantages) }
+      this.init()
+      this.loadAllHouses()
     },
     // 手动重试文案分析
     retryAi() {
@@ -864,4 +895,8 @@ p { text-align: left; }
   font-size: 12px;
   color: #96a3bf;
 }
+</style>
+
+<style scoped>
+.readiness-card{padding:15px;border:1px solid #e4e7eb;border-radius:8px;margin-bottom:18px;background:#fafbfc}.readiness-title{display:flex;justify-content:space-between;margin-bottom:10px;color:#657180;font-size:13px}.readiness-tags{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}.readiness-card p{font-size:12px;color:#7b8490;margin-bottom:0}
 </style>

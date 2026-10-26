@@ -18,13 +18,19 @@ public class CustomerService {
     private final ResourceAccess access;
     private final AccessScope scope;
     private final AuditService audit;
+    private final CustomerMatching matching;
 
     public CustomerService(
-            DataStore db, ResourceAccess access, AccessScope scope, AuditService audit) {
+            DataStore db,
+            ResourceAccess access,
+            AccessScope scope,
+            AuditService audit,
+            CustomerMatching matching) {
         this.db = db;
         this.access = access;
         this.scope = scope;
         this.audit = audit;
+        this.matching = matching;
     }
 
     public Object list(String keyword, String status, int page, int size) {
@@ -101,7 +107,7 @@ public class CustomerService {
                         "phone",
                         b.phone(),
                         "tags",
-                        db.json(b.tags() == null ? List.of() : b.tags()),
+                        db.json(b.tags() == null ? old.get("tags") : b.tags()),
                         "remark",
                         b.remark(),
                         "broker_id",
@@ -137,7 +143,21 @@ public class CustomerService {
 
     @Transactional
     public Object demand(long id, CustomerModels.Demand b) {
-        access.get("customer", id, true);
+        var customer = access.get("customer", id, true);
+        if (b.version() != null) HouseService.version(customer, b.version());
+        validateDemand(b);
+        var values = demandValues(id, b);
+        var existing =
+                db.optional(
+                        "SELECT id FROM customer_demand WHERE customer_id=#{p.id}", args("id", id));
+        if (existing.isEmpty()) db.insert("customer_demand", values);
+        else db.update("customer_demand", id(existing.get(), "id"), values);
+        db.update("customer", id, args("version", id(customer, "version") + 1));
+        audit.record("customer", id, "DEMAND", "更新购房需求", null, values);
+        return detail(id);
+    }
+
+    public void validateDemand(CustomerModels.Demand b) {
         range(b.minPrice(), b.maxPrice());
         range(b.minArea(), b.maxArea());
         Checks.require(
@@ -145,111 +165,40 @@ public class CustomerService {
                 "室数下限不能大于上限");
         if (b.decoration() != null)
             Checks.choice(b.decoration(), "ROUGH", "SIMPLE", "FINE", "OTHER", "UNKNOWN");
-        var values =
-                args(
-                        "customer_id",
-                        id,
-                        "districts",
-                        db.json(b.districts() == null ? List.of() : b.districts()),
-                        "min_price",
-                        b.minPrice(),
-                        "max_price",
-                        b.maxPrice(),
-                        "min_area",
-                        b.minArea(),
-                        "max_area",
-                        b.maxArea(),
-                        "min_rooms",
-                        b.minRooms(),
-                        "max_rooms",
-                        b.maxRooms(),
-                        "decoration",
-                        b.decoration(),
-                        "expected_purchase_date",
-                        b.expectedPurchaseDate(),
-                        "notes",
-                        b.notes());
-        var existing =
-                db.optional(
-                        "SELECT id FROM customer_demand WHERE customer_id=#{p.id}", args("id", id));
-        if (existing.isEmpty()) db.insert("customer_demand", values);
-        else db.update("customer_demand", id(existing.get(), "id"), values);
-        return detail(id);
+    }
+
+    private Map<String, Object> demandValues(long id, CustomerModels.Demand b) {
+        return args(
+                "customer_id",
+                id,
+                "districts",
+                db.json(b.districts() == null ? List.of() : b.districts()),
+                "min_price",
+                b.minPrice(),
+                "max_price",
+                b.maxPrice(),
+                "min_area",
+                b.minArea(),
+                "max_area",
+                b.maxArea(),
+                "min_rooms",
+                b.minRooms(),
+                "max_rooms",
+                b.maxRooms(),
+                "decoration",
+                b.decoration(),
+                "expected_purchase_date",
+                b.expectedPurchaseDate(),
+                "notes",
+                b.notes());
     }
 
     public Object matches(long customerId, int limit) {
-        Checks.require(limit >= 1 && limit <= 100, "limit 范围为 1-100");
-        access.get("customer", customerId, false);
-        var demand =
-                db.one(
-                        "SELECT * FROM customer_demand WHERE customer_id=#{p.id}",
-                        args("id", customerId));
-        var p = args("limit", limit);
-        StringBuilder where =
-                new StringBuilder("h.deleted=0 AND h.status='ON_SALE' AND " + scope.sql("h", p));
-        for (String bound :
-                List.of("minPrice", "maxPrice", "minArea", "maxArea", "minRooms", "maxRooms")) {
-            if (demand.get(bound) == null) continue;
-            p.put(bound, demand.get(bound));
-            String column =
-                    bound.endsWith("Price")
-                            ? "listing_price_yuan"
-                            : bound.endsWith("Area") ? "building_area_sqm" : "rooms";
-            where.append(" AND h.")
-                    .append(column)
-                    .append(bound.startsWith("min") ? ">=" : "<=")
-                    .append("#{p.")
-                    .append(bound)
-                    .append("}");
-        }
-        if (demand.get("decoration") != null) {
-            where.append(" AND h.decoration=#{p.decoration}");
-            p.put("decoration", demand.get("decoration"));
-        }
-        if (demand.get("districts") instanceof List<?> districts && !districts.isEmpty()) {
-            List<String> placeholders = new ArrayList<>();
-            for (int i = 0; i < districts.size(); i++) {
-                p.put("district" + i, districts.get(i));
-                placeholders.add("#{p.district" + i + "}");
-            }
-            where.append(" AND h.district IN (").append(String.join(",", placeholders)).append(")");
-        }
-        var rows =
-                db.list(
-                        "SELECT"
-                            + " h.id,h.community_name,h.district,h.building_area_sqm,h.rooms,h.listing_price_yuan,h.decoration"
-                            + " FROM house h WHERE "
-                                + where
-                                + " ORDER BY h.id DESC LIMIT #{p.limit}",
-                        p);
-        rows.forEach(
-                row -> {
-                    var reasons = new ArrayList<String>();
-                    if (demand.get("districts") instanceof List<?> ds && !ds.isEmpty())
-                        reasons.add("意向区域：" + ds + "；房源区域：" + row.get("district"));
-                    for (String[] pair :
-                            List.of(
-                                    new String[] {"Price", "listingPriceYuan", "挂牌总价（元）"},
-                                    new String[] {"Area", "buildingAreaSqm", "面积（平方米）"},
-                                    new String[] {"Rooms", "rooms", "室数"})) {
-                        Object min = demand.get("min" + pair[0]), max = demand.get("max" + pair[0]);
-                        if (min != null || max != null)
-                            reasons.add(
-                                    pair[2]
-                                            + "要求 "
-                                            + Objects.toString(min, "不限")
-                                            + " 至 "
-                                            + Objects.toString(max, "不限")
-                                            + "，实际 "
-                                            + row.get(pair[1]));
-                    }
-                    if (demand.get("decoration") != null)
-                        reasons.add("装修要求与实际均为 " + row.get("decoration"));
-                    reasons.add("仅比较已填写条件；未填写项不限");
-                    row.put("matchExplanation", String.join("；", reasons));
-                    row.put("matchReasons", reasons);
-                });
-        return rows;
+        return matching.recommend(customerId, limit, "STRICT", "BALANCED").get("records");
+    }
+
+    public Object recommendations(long customerId, int limit, String mode, String priority) {
+        return matching.recommend(customerId, limit, mode, priority);
     }
 
     @Transactional

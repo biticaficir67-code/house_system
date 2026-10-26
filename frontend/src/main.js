@@ -11,7 +11,7 @@ const vapp = createApp(App)
 axios.defaults.baseURL = '/api'
 axios.interceptors.request.use(function (config) {
   var token = window.sessionStorage.getItem('token')
-  if (token) {
+  if (token && !config.applicationOnly) {
     config.headers.Authorization = 'Bearer ' + token
   }
   return config
@@ -22,7 +22,7 @@ axios.interceptors.response.use(
   },
   function (err) {
     // token 失效回登录页
-    if (err.response && err.response.status === 401) {
+    if (err.response && err.response.status === 401 && !err.config?.applicationOnly) {
       store.commit('logout')
       router.push('/login')
     }

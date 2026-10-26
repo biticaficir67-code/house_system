@@ -39,6 +39,7 @@
           </template>
         </el-table-column>
       </el-table>
+      <el-pagination v-if="total > 50" style="margin-top:12px" layout="prev,pager,next" :total="total" :page-size="50" v-model:current-page="page" @current-change="loadUsers" />
       <!-- 有业务档案但还没有登录账号 -->
       <div class="sec-title" style="margin-top:22px">未开通登录的经纪人档案</div>
       <el-table :data="unboundList" stripe border>
@@ -54,8 +55,21 @@
           </template>
         </el-table-column>
       </el-table>
-      <p class="hint">新开通账号的初始密码均为 Broker123456，登录名按档案编号生成，例如档案 3 为 bk03。</p>
+      <p class="hint">开通时填写初始密码；登录名默认按档案编号生成，也可调整。审核时确认所属门店并填写意见。</p>
     </div>
+    <el-dialog :title="review.approved ? '通过经纪人申请' : '退回经纪人申请'" v-model="reviewVisible" width="470px">
+      <p>{{ review.displayName }} · {{ review.username }}</p>
+      <el-form label-width="90px">
+        <el-form-item v-if="review.approved" label="所属门店"><el-select v-model="review.storeId" :disabled="!!review.originalStoreId" placeholder="请选择门店"><el-option v-for="s in stores.filter(s=>s.enabled)" :key="s.id" :label="s.name" :value="s.id" /></el-select></el-form-item>
+        <el-form-item label="审核意见"><el-input type="textarea" v-model="review.reason" :rows="3" maxlength="255" show-word-limit /></el-form-item>
+      </el-form>
+      <template #footer><el-button @click="reviewVisible=false">取消</el-button><el-button type="primary" :loading="saving" @click="saveReview">确认审核</el-button></template>
+    </el-dialog>
+    <el-dialog title="开通经纪人登录" v-model="openingVisible" width="470px">
+      <p>{{ opening.displayName }} · {{ storeText(opening.storeId) }}</p>
+      <el-form label-width="90px"><el-form-item v-if="openingChoose" label="经纪人"><el-select :model-value="opening.brokerId" @change="selectOpening"><el-option v-for="b in unboundList" :key="b.id" :label="b.brokerName || b.name" :value="b.id" /></el-select></el-form-item><el-form-item label="登录名"><el-input v-model="opening.username" maxlength="50" /></el-form-item><el-form-item label="初始密码"><el-input v-model="opening.password" type="password" show-password autocomplete="new-password" placeholder="10至72位，请单独告知经纪人" /></el-form-item></el-form>
+      <template #footer><el-button @click="openingVisible=false">取消</el-button><el-button type="primary" :loading="saving" @click="saveOpening">确认开通</el-button></template>
+    </el-dialog>
   </div>
 </template>
 <script>
@@ -70,7 +84,8 @@ export default {
       unboundList: [],
       stores: [],
       brokerRoleId: null,
-      defaultPwd: 'Broker123456'
+      accountStatus: '', page: 1, total: 0, saving: false,
+      reviewVisible: false, review: {}, openingVisible: false, openingChoose: false, opening: {}
     }
   },
   created() {
@@ -123,12 +138,7 @@ export default {
           if (list[i].code === 'BROKER') that.brokerRoleId = list[i].id
         }
       }).catch(function () {})
-      this.$axios.get('/users', { params: { page: 1, size: 50 } }).then(function (res) {
-        var d = res.data.data || {}
-        that.userList = d.records || []
-      }).catch(function (err) {
-        that.$alert(that.errMsg(err), { confirmButtonText: '确定' })
-      })
+      this.loadUsers()
       this.$axios.get('/brokers', { params: { unbound: true } }).then(function (res) {
         that.unboundList = res.data.data || []
         if (!Array.isArray(that.unboundList)) that.unboundList = that.unboundList.records || []
@@ -136,107 +146,48 @@ export default {
         that.unboundList = []
       })
     },
-    // 给一条经纪人档案开通登录账号
-    openOne(broker) {
-      var that = this
-      if (!this.brokerRoleId) {
-        this.$alert('未找到经纪人角色', { confirmButtonText: '确定' })
-        return Promise.reject()
-      }
-      return this.$axios.post('/users', {
-        username: this.loginName(broker),
-        password: this.defaultPwd,
-        displayName: broker.brokerName || broker.name,
-        phone: broker.phone || '',
-        storeId: Number(broker.storeId),
-        brokerId: Number(broker.id),
-        roleIds: [Number(this.brokerRoleId)]
-      }).then(function () {
-        return true
-      }).catch(function (err) {
-        that.$alert(that.errMsg(err), { confirmButtonText: '确定' })
-        return Promise.reject(err)
-      })
+    async loadUsers() {
+      try { const r = await this.$axios.get('/users', { params: {page:this.page,size:50,accountStatus:this.accountStatus||undefined} }); this.userList = r.data.data.records; this.total = r.data.data.total }
+      catch(error) { this.$message.error(this.errMsg(error)) }
+    },
+    openOne(broker, choose = false) {
+      this.openingChoose = choose
+      this.opening = {username:this.loginName(broker),password:'',displayName:broker.brokerName || broker.name,phone:broker.phone || '',storeId:broker.storeId,brokerId:broker.id}
+      this.openingVisible = true
     },
     openUnbound() {
-      var that = this
-      if (!this.unboundList.length) {
-        this.$alert('没有未开通的档案', { confirmButtonText: '确定' })
-        return
-      }
-      var run = function () {
-        var chain = Promise.resolve()
-        that.unboundList.forEach(function (b) {
-          chain = chain.then(function () {
-            return that.openOne(b)
-          })
-        })
-        return chain.then(function () {
-          that.$alert('已开通，初始密码 Broker123456', { confirmButtonText: '确定' })
-          that.init()
-        }).catch(function () {
-          that.init()
-        })
-      }
-      if (this.brokerRoleId) {
-        run()
-        return
-      }
-      this.$axios.get('/roles').then(function (res) {
-        var list = res.data.data || []
-        var i
-        for (i = 0; i < list.length; i++) {
-          if (list[i].code === 'BROKER') that.brokerRoleId = list[i].id
-        }
-        if (!that.brokerRoleId) {
-          that.$alert('未找到经纪人角色', { confirmButtonText: '确定' })
-          return
-        }
-        run()
-      })
+      if (!this.unboundList.length) return this.$message.info('没有未开通的档案')
+      this.openOne(this.unboundList[0], true)
     },
-    firstStoreId() {
-      if (!this.stores.length) return null
-      return this.stores[0].id
+    selectOpening(id) {
+      const broker = this.unboundList.find(item => String(item.id) === String(id))
+      if (broker) this.openOne(broker, true)
     },
-    pass(row) {
-      var storeId = row.storeId || this.firstStoreId()
-      if (!storeId) {
-        this.$alert('请先有门店', { confirmButtonText: '确定' })
-        return
-      }
-      this.$axios.put('/users/' + row.id + '/review', {
-        approved: true,
-        storeId: Number(storeId),
-        reason: '通过',
-        version: row.version
-      }).then(() => {
-        this.$alert('已通过', { confirmButtonText: '确定' })
-        this.init()
-      }).catch((err) => {
-        this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
-      })
+    async saveOpening() {
+      if (!this.brokerRoleId) return this.$message.warning('未找到经纪人角色，请刷新后重试')
+      if (!/^[a-zA-Z0-9_.-]{3,50}$/.test(this.opening.username) || this.opening.password.length<10 || this.opening.password.length>72) return this.$message.warning('登录名需3至50位字母、数字或_.-，密码需10至72位')
+      this.saving=true
+      try { await this.$axios.post('/users', {...this.opening,roleIds:[this.brokerRoleId]}); this.opening.password='';this.openingVisible=false;this.$message.success('已开通，请将账号信息单独告知经纪人');this.init() }
+      catch(error) { this.$message.error(this.errMsg(error)) }
+      finally {this.saving=false}
     },
-    reject(row) {
-      var storeId = row.storeId || this.firstStoreId()
-      this.$axios.put('/users/' + row.id + '/review', {
-        approved: false,
-        storeId: storeId ? Number(storeId) : undefined,
-        reason: '拒绝',
-        version: row.version
-      }).then(() => {
-        this.$alert('已拒绝', { confirmButtonText: '确定' })
-        this.init()
-      }).catch((err) => {
-        this.$alert(this.errMsg(err), { confirmButtonText: '确定' })
-      })
+    pass(row) { this.review={...row,approved:true,storeId:row.storeId||'',originalStoreId:row.storeId,reason:''};this.reviewVisible=true },
+    reject(row) { this.review={...row,approved:false,reason:''};this.reviewVisible=true },
+    async saveReview() {
+      if (!this.review.reason.trim() || this.review.reason.length>255) return this.$message.warning('请填写255字以内的审核意见')
+      if (this.review.approved && !this.review.storeId) return this.$message.warning('请选择该经纪人的门店')
+      this.saving=true
+      try { await this.$axios.put('/users/'+this.review.id+'/review',{approved:this.review.approved,storeId:this.review.approved?this.review.storeId:undefined,reason:this.review.reason,version:this.review.version});this.reviewVisible=false;this.$message.success('审核已保存');this.init() }
+      catch(error) { this.$message.error(this.errMsg(error));if(error.response?.status===409){this.reviewVisible=false;this.init()} }
+      finally {this.saving=false}
     },
     resetPwd(row) {
       var that = this
       this.$prompt('请输入新密码（至少10位）', '重置密码：' + row.username, {
         confirmButtonText: '确定',
         cancelButtonText: '返回',
-        inputPattern: /.{10,}/,
+        inputType: 'password',
+        inputPattern: /^.{10,72}$/,
         inputErrorMessage: '密码至少10位'
       }).then(function (r) {
         return that.$axios.put('/users/' + row.id + '/password', { password: r.value })

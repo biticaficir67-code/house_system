@@ -87,7 +87,7 @@ class BackendIntegrationTest {
                                                         "总部"))))
                 .andExpect(status().isOk());
         admin = login("admin", password);
-        store = ok(HttpMethod.GET, "/api/auth/me", null, admin).get("storeId").asLong();
+        store = ok(HttpMethod.GET, "/api/stores", null, admin).get(0).get("id").asLong();
         for (JsonNode role : ok(HttpMethod.GET, "/api/roles", null, admin))
             roles.put(role.get("code").asText(), role.get("id").asLong());
     }
@@ -638,8 +638,12 @@ class BackendIntegrationTest {
         JsonNode failed = ok(HttpMethod.POST, path, null, broker.token());
         assertThat(failed.get("status").asText()).isEqualTo("FAILED");
         assertThat(failed.get("estimatedTotalPriceYuan").isNull()).isTrue();
-        JsonNode requests = ok(HttpMethod.GET,
-                "/api/ai/houses/" + id + "/requests?kind=PRICE", null, broker.token());
+        JsonNode requests =
+                ok(
+                        HttpMethod.GET,
+                        "/api/ai/houses/" + id + "/requests?kind=PRICE",
+                        null,
+                        broker.token());
         assertThat(requests.size()).isEqualTo(2);
         assertThat(requests.get(0).get("kind").asText()).isEqualTo("PRICE");
         assertThat(requests.get(0).get("status").asText()).isEqualTo("FAILED");

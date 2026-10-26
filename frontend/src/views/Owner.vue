@@ -13,6 +13,7 @@
         <el-form-item>
           <el-button @click="search">查询</el-button>
           <el-button type="primary" @click="openAdd">新增业主</el-button>
+          <el-button @click="importVisible = true">表格导入</el-button>
         </el-form-item>
       </el-form>
       <el-table :data="tableData" stripe border>
@@ -54,16 +55,19 @@
         </el-form-item>
       </el-form>
     </el-dialog>
+    <BusinessImportDialog v-if="importVisible" v-model="importVisible" initial-kind="OWNER" @imported="init" />
   </div>
 </template>
 <script>
 import NavMain from '@/components/NavMain.vue'
+import BusinessImportDialog from '@/components/BusinessImportDialog.vue'
 // 业主查询和增删改
 export default {
   name: 'Owner',
-  components: { NavMain },
+  components: { NavMain, BusinessImportDialog },
   data() {
     return {
+      importVisible: this.$route.query.import === '1',
       searchForm: { keyword: '' },
       tableData: [],
       page: 1,
@@ -89,6 +93,9 @@ export default {
   created() {
     this.loadStores()
     this.init()
+  },
+  watch: {
+    '$route.query.import'(value) { if (value === '1') this.importVisible = true }
   },
   methods: {
     // 新增时下拉门店

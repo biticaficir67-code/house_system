@@ -195,7 +195,9 @@ export default {
           fillColor: that.pinColor(g),
           fillOpacity: 0.92
         })
-        marker.bindTooltip(g.name + '（' + n + '套）', { direction: 'top', offset: [0, -8] })
+        const tooltip = document.createElement('span')
+        tooltip.textContent = g.name + '（' + n + '套）'
+        marker.bindTooltip(tooltip, { direction: 'top', offset: [0, -8] })
         that.layer.addLayer(marker)
       })
       if (groups.length) {

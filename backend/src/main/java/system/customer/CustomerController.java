@@ -98,6 +98,16 @@ public class CustomerController {
         return ApiResponse.success(service.matches(id, limit));
     }
 
+    @GetMapping("/{id}/recommendations")
+    @PreAuthorize("hasAuthority('customer:read') and hasAuthority('house:read')")
+    public ApiResponse<?> recommendations(
+            @PathVariable long id,
+            @RequestParam(defaultValue = "20") int limit,
+            @RequestParam(defaultValue = "STRICT") String mode,
+            @RequestParam(defaultValue = "BALANCED") String priority) {
+        return ApiResponse.success(service.recommendations(id, limit, mode, priority));
+    }
+
     @GetMapping("/{id}/follow-ups")
     @PreAuthorize("hasAuthority('customer:read')")
     public ApiResponse<?> follow(@PathVariable long id) {

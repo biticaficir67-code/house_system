@@ -12,6 +12,7 @@ import PriceAdvice from '../views/PriceAdvice.vue'
 const Dashboard = () => import('../views/Dashboard.vue')
 
 const routes = [
+  { path: '/import', redirect: to => ({ path: {CUSTOMER:'/customer',OWNER:'/owner'}[to.query.kind] || '/house', query: {import:'1'} }) },
   {
     path: '/',
     redirect: '/login',

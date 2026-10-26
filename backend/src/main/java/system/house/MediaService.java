@@ -124,7 +124,10 @@ public class MediaService {
                                 "is_cover",
                                 type.equals("IMAGE") && count == 0,
                                 "sort_order",
-                                0));
+                                db.count(
+                                        "SELECT COALESCE(MAX(sort_order),-1)+1 AS value FROM"
+                                            + " house_media WHERE house_id=#{p.id} AND deleted=0",
+                                        args("id", houseId))));
         long version = houses.mediaChanged(houseId, "MEDIA_UPLOAD");
         var result = metadata(houseId, id);
         result.put("houseVersion", version);

@@ -4,6 +4,7 @@ import jakarta.validation.constraints.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 
 public final class OwnerModels {
     private OwnerModels() {}
@@ -15,7 +16,8 @@ public final class OwnerModels {
             @Size(max = 5000) String remark,
             Long storeId,
             Long brokerId,
-            Long version) {}
+            Long version,
+            @Size(max = 50) List<@NotNull @Positive Long> houseIds) {}
 
     public record Entrustment(
             @NotNull @Positive Long houseId,
@@ -27,4 +29,7 @@ public final class OwnerModels {
             @Positive Long jointWithId) {}
 
     public record End(@NotBlank @Size(max = 500) String reason) {}
+
+    public record StatusChange(
+            @NotBlank String status, @Size(max = 500) String reason, Long version) {}
 }

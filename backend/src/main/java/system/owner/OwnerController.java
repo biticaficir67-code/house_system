@@ -22,9 +22,18 @@ public class OwnerController {
     @PreAuthorize("hasAuthority('owner:read')")
     public ApiResponse<?> list(
             @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String status,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return ApiResponse.success(service.list(keyword, page, size));
+        return ApiResponse.success(service.list(keyword, status, page, size));
+    }
+
+    @GetMapping("/house-options")
+    @PreAuthorize("hasAuthority('owner:read') and hasAuthority('house:read')")
+    public ApiResponse<?> houseOptions(
+            @RequestParam(required = false) Long storeId,
+            @RequestParam(required = false) Long ownerId) {
+        return ApiResponse.success(service.houseOptions(storeId, ownerId));
     }
 
     @GetMapping("/duplicates")
@@ -73,6 +82,13 @@ public class OwnerController {
     public ApiResponse<?> delete(@PathVariable long id) {
         service.delete(id);
         return ApiResponse.success(null);
+    }
+
+    @PutMapping("/{id}/status")
+    @PreAuthorize("hasAuthority('owner:write')")
+    public ApiResponse<?> status(
+            @PathVariable long id, @Valid @RequestBody OwnerModels.StatusChange b) {
+        return ApiResponse.success(service.status(id, b));
     }
 
     @GetMapping("/{id}/follow-ups")

@@ -1,5 +1,6 @@
 package system.customer;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 
 import java.math.BigDecimal;
@@ -21,7 +22,8 @@ public final class CustomerModels {
             @Size(max = 5000) String remark,
             Long storeId,
             Long brokerId,
-            Long version) {}
+            Long version,
+            @Valid Demand demand) {}
 
     public record Demand(
             @Size(max = 20) List<@NotBlank @Size(max = 32) String> districts,

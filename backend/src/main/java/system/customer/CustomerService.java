@@ -64,6 +64,7 @@ public class CustomerService {
         Long broker = scope.broker(b.brokerId());
         access.store(store);
         access.broker(store, broker);
+        if (b.demand() != null) validateDemand(b.demand());
         long id =
                 db.insert(
                         "customer",
@@ -85,7 +86,10 @@ public class CustomerService {
                                 "version",
                                 0L,
                                 "deleted",
-                                false));
+                                false,
+                                "demand_desc",
+                                b.demand() == null ? null : demandSummary(b.demand())));
+        if (b.demand() != null) db.insert("customer_demand", demandValues(id, b.demand()));
         return detail(id);
     }
 
@@ -117,24 +121,11 @@ public class CustomerService {
         return detail(id);
     }
 
+    // 停用客户：档案留在库里，不 DELETE
     @Transactional
     public void delete(long id) {
-        access.get("customer", id, true);
-        Checks.require(
-                db.count(
-                                "SELECT COUNT(*) AS value FROM house_show WHERE customer_id=#{p.id}"
-                                        + " AND status='SCHEDULED' AND deleted=0",
-                                args("id", id))
-                        == 0,
-                "请先取消未完成预约");
-        Checks.require(
-                db.count(
-                                "SELECT COUNT(*) AS value FROM house_deal WHERE customer_id=#{p.id}"
-                                        + " AND status='CONFIRMED' AND deleted=0",
-                                args("id", id))
-                        == 0,
-                "已成交客户应保留，不允许归档");
-        db.update("customer", id, args("deleted", true, "status", "INACTIVE"));
+        var row = access.get("customer", id, true);
+        status(id, new CustomerModels.StatusChange("INACTIVE", "停用客户", id(row, "version")));
     }
 
     private static void range(BigDecimal min, BigDecimal max) {
@@ -152,9 +143,71 @@ public class CustomerService {
                         "SELECT id FROM customer_demand WHERE customer_id=#{p.id}", args("id", id));
         if (existing.isEmpty()) db.insert("customer_demand", values);
         else db.update("customer_demand", id(existing.get(), "id"), values);
-        db.update("customer", id, args("version", id(customer, "version") + 1));
+        db.update(
+                "customer",
+                id,
+                args(
+                        "demand_desc",
+                        demandSummary(b),
+                        "version",
+                        id(customer, "version") + 1));
         audit.record("customer", id, "DEMAND", "更新购房需求", null, values);
         return detail(id);
+    }
+
+    // 列表「需求摘要」：把结构化需求压成一句话，写入 customer.demand_desc
+    String demandSummary(CustomerModels.Demand b) {
+        List<String> parts = new ArrayList<>();
+        if (b.districts() != null && !b.districts().isEmpty())
+            parts.add(String.join("/", b.districts()));
+        String budget = wanRange(b.minPrice(), b.maxPrice());
+        if (budget != null) parts.add("预算" + budget + "万");
+        String area = numRange(b.minArea(), b.maxArea());
+        if (area != null) parts.add(area + "㎡");
+        String rooms = intRange(b.minRooms(), b.maxRooms());
+        if (rooms != null) parts.add(rooms + "室");
+        if (b.decoration() != null && !b.decoration().isBlank())
+            parts.add(decorationText(b.decoration()));
+        if (b.expectedPurchaseDate() != null) parts.add("计划" + b.expectedPurchaseDate());
+        if (b.notes() != null && !b.notes().isBlank()) parts.add(b.notes().trim());
+        if (parts.isEmpty()) return null;
+        String text = String.join("，", parts);
+        return text.length() <= 500 ? text : text.substring(0, 500);
+    }
+
+    private static String wanRange(BigDecimal min, BigDecimal max) {
+        if (min == null && max == null) return null;
+        return wan(min) + "-" + wan(max);
+    }
+
+    private static String wan(BigDecimal yuan) {
+        if (yuan == null) return "";
+        return yuan.divide(new BigDecimal("10000")).stripTrailingZeros().toPlainString();
+    }
+
+    private static String numRange(BigDecimal min, BigDecimal max) {
+        if (min == null && max == null) return null;
+        return plain(min) + "-" + plain(max);
+    }
+
+    private static String plain(BigDecimal n) {
+        if (n == null) return "";
+        return n.stripTrailingZeros().toPlainString();
+    }
+
+    private static String intRange(Integer min, Integer max) {
+        if (min == null && max == null) return null;
+        return (min == null ? "" : min) + "-" + (max == null ? "" : max);
+    }
+
+    private static String decorationText(String code) {
+        return switch (code) {
+            case "ROUGH" -> "毛坯";
+            case "SIMPLE" -> "简装";
+            case "FINE" -> "精装";
+            case "OTHER" -> "其他装修";
+            default -> "装修不限";
+        };
     }
 
     public void validateDemand(CustomerModels.Demand b) {
@@ -223,6 +276,8 @@ public class CustomerService {
                 args(
                         "status",
                         b.status(),
+                        "deleted",
+                        false,
                         "inactive_reason",
                         b.status().equals("INACTIVE") ? b.reason() : null,
                         "version",

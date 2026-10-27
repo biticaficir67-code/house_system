@@ -26,20 +26,73 @@ public class OwnerService {
         this.reminders = reminders;
     }
 
-    public Object list(String keyword, int page, int size) {
-        var p = args("keyword", Checks.search(keyword));
-        return access.forPage(
-                "owner",
-                p.get("keyword") == null
-                        ? ""
-                        : " AND (name LIKE CONCAT('%',#{p.keyword},'%') OR phone LIKE"
-                                + " CONCAT('%',#{p.keyword},'%'))",
-                p,
-                new PageQuery(page, size));
+    public Object list(String keyword, String status, int page, int size) {
+        var pageQuery = new PageQuery(page, size);
+        var p = args("keyword", Checks.search(keyword), "status", status);
+        String filter = "o.deleted=0 AND " + scope.sql("o", p);
+        if (p.get("keyword") != null)
+            filter +=
+                    " AND (o.name LIKE CONCAT('%',#{p.keyword},'%') OR o.phone LIKE"
+                            + " CONCAT('%',#{p.keyword},'%'))";
+        if (status != null && !status.isBlank()) {
+            Checks.choice(status, "ACTIVE", "INACTIVE");
+            filter += " AND o.status=#{p.status}";
+        }
+        p.put("offset", pageQuery.offset());
+        p.put("size", pageQuery.size());
+        String houseJoin = " FROM house h WHERE h.deleted=0 AND h.owner_id=o.id";
+        var records =
+                db.list(
+                        "SELECT o.*,"
+                                + " (SELECT COUNT(*)"
+                                + houseJoin
+                                + " AND h.status='ON_SALE') AS on_sale_count,"
+                                + " (SELECT COUNT(*)"
+                                + houseJoin
+                                + " AND h.status='OFF') AS off_count,"
+                                + " (SELECT COUNT(*)"
+                                + houseJoin
+                                + " AND h.status='DEAL') AS deal_count"
+                                + " FROM owner o WHERE "
+                                + filter
+                                + " ORDER BY o.id DESC LIMIT #{p.size} OFFSET #{p.offset}",
+                        p);
+        for (var row : records) row.put("houses", housesOf(id(row, "id")));
+        return args(
+                "total",
+                db.count("SELECT COUNT(*) AS value FROM owner o WHERE " + filter, p),
+                "page",
+                pageQuery.page(),
+                "size",
+                pageQuery.size(),
+                "records",
+                records);
+    }
+
+    public Object houseOptions(Long storeId, Long ownerId) {
+        long store = scope.store(storeId);
+        var p = args("store", store, "owner", ownerId);
+        return db.list(
+                "SELECT h.id,h.community_name,h.district,h.status,h.listing_price_yuan,"
+                    + " h.building_area_sqm,h.rooms,h.halls,h.owner_id,o.name AS owner_name"
+                    + " FROM house h LEFT JOIN owner o ON o.id=h.owner_id AND o.deleted=0"
+                    + " WHERE h.deleted=0 AND h.store_id=#{p.store} AND "
+                    + scope.sql("h", p)
+                    + " ORDER BY h.id DESC",
+                p);
+    }
+
+    public Object housesOf(long owner) {
+        return db.list(
+                "SELECT id,community_name,district,status,listing_price_yuan,building_area_sqm,"
+                    + " rooms,halls,owner_id FROM house WHERE deleted=0 AND owner_id=#{p.id} ORDER"
+                    + " BY id",
+                args("id", owner));
     }
 
     public Object detail(long id) {
         var row = access.get("owner", id, false);
+        row.put("houses", housesOf(id));
         row.put("entrustments", entrustments(id));
         return row;
     }
@@ -69,7 +122,10 @@ public class OwnerService {
                                 "version",
                                 0L,
                                 "deleted",
-                                false));
+                                false,
+                                "status",
+                                "ACTIVE"));
+        bindHouses(id, access.get("owner", id, true), b.houseIds());
         return detail(id);
     }
 
@@ -102,20 +158,53 @@ public class OwnerService {
         db.execute(
                 "UPDATE owner_entrustment SET broker_id=#{p.broker} WHERE owner_id=#{p.id}",
                 args("broker", broker, "id", id));
+        bindHouses(id, access.get("owner", id, true), b.houseIds());
         return detail(id);
     }
 
+    // 名下房源写在 house.owner_id：一套房只挂一个业主，取消勾选只解绑不删房
+    private void bindHouses(long ownerId, java.util.Map<String, Object> person, java.util.List<Long> houseIds) {
+        if (houseIds == null) return;
+        var want = new java.util.LinkedHashSet<>(houseIds);
+        Checks.require(want.size() <= 50, "一次最多匹配50套房源");
+        var current =
+                db.list(
+                        "SELECT id FROM house WHERE owner_id=#{p.id} AND deleted=0",
+                        args("id", ownerId));
+        for (var row : current) {
+            long hid = id(row, "id");
+            if (!want.contains(hid)) db.update("house", hid, args("owner_id", null));
+        }
+        for (Long hid : want) {
+            var house = access.get("house", hid, true);
+            access.sameStore(person, house);
+            db.update("house", hid, args("owner_id", ownerId));
+        }
+    }
+
+    // 停用业主：档案留在库里，不 DELETE；房源自己的在售/下架/成交不受影响
     @Transactional
     public void delete(long id) {
-        access.get("owner", id, true);
-        Checks.require(
-                db.count(
-                                "SELECT COUNT(*) AS value FROM owner_entrustment WHERE"
-                                        + " owner_id=#{p.id} AND status='ACTIVE' AND deleted=0",
-                                args("id", id))
-                        == 0,
-                "请先结束有效委托");
-        db.update("owner", id, args("deleted", true));
+        status(id, new OwnerModels.StatusChange("INACTIVE", "停用业主", null));
+    }
+
+    @Transactional
+    public Object status(long id, OwnerModels.StatusChange b) {
+        Checks.choice(b.status(), "ACTIVE", "INACTIVE");
+        var row = access.get("owner", id, true);
+        if (b.version() != null) HouseService.version(row, b.version());
+        Checks.require(!java.util.Objects.equals(row.get("status"), b.status()), "业主已处于该状态");
+        db.update(
+                "owner",
+                id,
+                args(
+                        "status",
+                        b.status(),
+                        "deleted",
+                        false,
+                        "version",
+                        id(row, "version") + 1));
+        return detail(id);
     }
 
     public Object entrustments(long owner) {

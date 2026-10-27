@@ -67,7 +67,9 @@ CREATE TABLE house (
  data_origin VARCHAR(32) NOT NULL DEFAULT 'LEGACY_IMPORT',
  version BIGINT NOT NULL DEFAULT 0,
  deleted BOOLEAN NOT NULL DEFAULT FALSE,
- KEY idx_house_store_status(store_id,deleted,status)
+ owner_id BIGINT NULL,
+ KEY idx_house_store_status(store_id,deleted,status),
+ KEY idx_house_owner(owner_id)
 );
 CREATE TABLE house_price_pred (
 
@@ -178,7 +180,8 @@ CREATE TABLE IF NOT EXISTS house_status_log (
 CREATE TABLE IF NOT EXISTS owner (
  id BIGINT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(64) NOT NULL, phone VARCHAR(32) NOT NULL, address VARCHAR(255),
  remark TEXT, store_id BIGINT NOT NULL, broker_id BIGINT, version BIGINT NOT NULL DEFAULT 0,
- deleted BOOLEAN NOT NULL DEFAULT FALSE, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ deleted BOOLEAN NOT NULL DEFAULT FALSE, status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+ created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
  FOREIGN KEY(store_id) REFERENCES store(id), FOREIGN KEY(broker_id) REFERENCES broker(id), KEY idx_owner_scope(store_id,broker_id,deleted)
 );
 CREATE TABLE IF NOT EXISTS owner_entrustment (
@@ -202,7 +205,7 @@ CREATE TABLE IF NOT EXISTS owner_follow_up (
 CREATE TABLE IF NOT EXISTS customer (
  id BIGINT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(64) NOT NULL, phone VARCHAR(32) NOT NULL, tags LONGTEXT NOT NULL,
  remark TEXT, store_id BIGINT NOT NULL, broker_id BIGINT, status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
- version BIGINT NOT NULL DEFAULT 0, deleted BOOLEAN NOT NULL DEFAULT FALSE, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+ demand_desc VARCHAR(500), version BIGINT NOT NULL DEFAULT 0, deleted BOOLEAN NOT NULL DEFAULT FALSE, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
  FOREIGN KEY(store_id) REFERENCES store(id), FOREIGN KEY(broker_id) REFERENCES broker(id), KEY idx_customer_scope(store_id,broker_id,deleted)
 );
 CREATE TABLE IF NOT EXISTS customer_demand (
